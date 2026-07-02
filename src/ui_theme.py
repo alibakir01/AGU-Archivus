@@ -7,6 +7,260 @@ def global_css() -> str:
     p = ROOT / "assets" / "app_style.css"
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
+
+# Okunabilirlik iyileştirmeleri — HER İKİ temada uygulanır
+_READABILITY_CSS = """
+<style>
+  [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"],
+  [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p,
+  [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] li {
+      font-size: 1rem !important;
+      line-height: 1.68 !important;
+  }
+  [data-testid="stMarkdownContainer"] li { margin-bottom: 4px !important; }
+  [data-testid="stMarkdownContainer"] h2 { margin-top: 0.6em !important; font-size: 1.4rem !important; }
+  [data-testid="stMarkdownContainer"] h3 { margin-top: 0.5em !important; font-size: 1.15rem !important; }
+  [data-testid="stMarkdownContainer"] strong { font-weight: 700 !important; }
+
+  /* Kalıcı uyarı — mesaj kutusunun hemen altında (Python'da chat_input'tan sonra basılır) */
+  .chat-disclaimer {
+      text-align: center;
+      font-size: 0.82rem;
+      color: #8b909b !important;
+      opacity: 0.9;
+      padding: 7px 8px 2px;
+      line-height: 1.35;
+  }
+
+  /* Material Symbols ikonları: base CSS'teki 'font-family: Inter !important' popover/menu
+     içinde ikon fontunu ezip ligature'ları ham yazıya çeviriyordu (tablo sütun menüsündeki
+     'content_copy', 'arrow_upward' gibi üst üste binen yazılar). İkon fontunu geri getir. */
+  [data-testid="stIconMaterial"],
+  [data-baseweb="popover"] [data-testid="stIconMaterial"],
+  [data-baseweb="menu"] [data-testid="stIconMaterial"],
+  span[class*="material-symbols"], span[class*="material-icons"] {
+      font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+      font-weight: normal !important; font-style: normal !important;
+      letter-spacing: normal !important; text-transform: none !important;
+      white-space: nowrap !important; word-wrap: normal !important; direction: ltr !important;
+  }
+
+  /* Primary buton (Yeni CGPA Hesapla) — bordo zeminde yazı HER ZAMAN beyaz */
+  .stButton button[kind="primary"], .stButton button[kind="primary"] * { color: #FFFFFF !important; }
+  .stButton button[kind="primary"] svg { fill: #FFFFFF !important; }
+
+  /* Tema switch — sağ üstte sabit; araç çubuğunun ALTINDA (tıklama engellenmesin) */
+  .st-key-theme_switch {
+      position: fixed !important;
+      top: 3.1rem; right: 0.9rem; z-index: 1000000 !important;
+      width: auto !important; min-width: 0 !important;
+      background: rgba(140,140,150,0.22);
+      border: 1px solid rgba(140,140,150,0.35);
+      border-radius: 999px;
+      padding: 7px 14px !important;
+      pointer-events: auto !important;
+      box-shadow: 0 3px 12px -4px rgba(0,0,0,0.3);
+      overflow: visible !important;
+  }
+  .st-key-theme_switch * { pointer-events: auto !important; }
+  .st-key-theme_switch [data-testid="stElementContainer"],
+  .st-key-theme_switch [data-testid="stVerticalBlock"] { width: auto !important; gap: 0 !important; }
+  .st-key-theme_switch label { margin: 0 !important; display: flex !important; align-items: center !important; }
+  /* Yardım ikonu (?) gizle — sadeleşsin */
+  .st-key-theme_switch [data-testid="stTooltipIcon"] { display: none !important; }
+</style>
+"""
+
+# AYDINLIK TEMA — sadece "light" seçilince enjekte edilen override katmanı.
+# Çalışan koyu CSS'e dokunulmaz; risk aydınlık moda izole.
+_LIGHT_CSS = """
+<style>
+  /* ===== AYDINLIK TEMA (yumuşak, göz yormayan sıcak beyaz) ===== */
+  .stApp {
+      background:
+          radial-gradient(1000px 480px at 12% -8%, rgba(194,24,91,0.045), transparent 60%),
+          linear-gradient(180deg, #F5F6F8 0%, #ECEEF2 100%) !important;
+  }
+  /* Metin — güçlü kontrast ama saf siyah değil (daha az yorucu) */
+  .stApp, .stApp p, .stApp li, .stApp label, .stApp span,
+  [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p,
+  [data-testid="stMarkdownContainer"] li, [data-testid="stMarkdownContainer"] span,
+  [data-testid="stChatMessage"], [data-testid="stChatMessage"] * {
+      color: #1c2330 !important;
+  }
+  h1, h2, h3, h4, h5, h6 { color: #141a24 !important; }
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: #606877 !important; }
+
+  /* HERO — açık zeminde soluk kalmasın diye ZENGİN opak bordo gradient */
+  .hero {
+      background: linear-gradient(135deg, #7B1E3A 0%, #B21E55 52%, #E0507A 100%) !important;
+      border: 1px solid rgba(0,0,0,0.06) !important;
+      box-shadow: 0 12px 34px -14px rgba(178,30,85,0.5) !important;
+  }
+  .hero p { color: rgba(255,255,255,0.94) !important; }
+  .hero .pill { color: #FFE9C4 !important; background: rgba(255,255,255,0.15) !important; }
+
+  /* Sidebar */
+  [data-testid="stSidebar"] {
+      background: #FFFFFF !important;
+      border-right: 1px solid #E6E8EE !important;
+  }
+  [data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
+  [data-testid="stSidebar"] label, [data-testid="stSidebar"] div { color: #1c2330 !important; }
+  /* Logo başlığı beyazda kayboluyordu → bordo gradient */
+  [data-testid="stSidebar"] .sidebar-logo h2 {
+      background: linear-gradient(90deg, #7B1E3A, #C2185B) !important;
+      -webkit-background-clip: text !important; background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+  }
+  [data-testid="stSidebar"] .sidebar-logo { border-bottom: 1px solid #EAECF1 !important; }
+  [data-testid="stSidebar"] .sidebar-logo span { color: #8a90a0 !important; opacity: 1 !important; }
+
+  /* Vurgular: bordo (altın beyazda okunmaz) */
+  .info-card strong, .detail-card strong, [data-testid="stExpander"] summary { color: #B21E55 !important; }
+
+  /* Kartlar — beyaz + yumuşak gölge */
+  .info-card {
+      background: #FFFFFF !important; border: 1px solid #EADCE3 !important;
+      box-shadow: 0 1px 3px rgba(16,24,40,0.05) !important; color: #333a48 !important; }
+  .detail-card {
+      background: #FFF7E8 !important; border-left: 3px solid #FFB800 !important; color: #4a4230 !important; }
+  .welcome { color: #3a4150 !important; opacity: 1 !important; }
+
+  /* Selectbox (kapalı görünüm) — sadece sidebar değil, TÜM alanlar (GPA sekmesi dahil) */
+  [data-baseweb="select"] > div {
+      background: #FFFFFF !important; border: 1px solid #DADCE3 !important; }
+  [data-baseweb="select"] > div * { color: #1c2330 !important; }
+  [data-baseweb="select"] svg { fill: #5a6172 !important; }
+  [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="select-dropdown"],
+  [data-baseweb="popover"] [role="listbox"], [data-baseweb="popover"] ul {
+      background: #FFFFFF !important; border: 1px solid #E1E3EA !important;
+      box-shadow: 0 10px 30px -8px rgba(16,24,40,0.18) !important; }
+  [data-baseweb="popover"] [role="option"], [data-baseweb="menu"] li, [data-baseweb="select-dropdown"] li,
+  [data-baseweb="popover"] [role="option"] *, [data-baseweb="menu"] li * { color: #1c2330 !important; }
+  [data-baseweb="popover"] [role="option"]:hover, [data-baseweb="menu"] li:hover { background: #FBEFF3 !important; }
+  [data-baseweb="popover"] [role="option"]:hover * { color: #7B1E3A !important; }
+  [data-baseweb="popover"] [role="option"][aria-selected="true"] { background: #F6E3EC !important; }
+
+  /* Chat balonu — beyaz + gölge */
+  [data-testid="stChatMessage"] {
+      background: #FFFFFF !important; border: 1px solid #E6E8EE !important;
+      box-shadow: 0 1px 3px rgba(16,24,40,0.05) !important; }
+  [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+      background: linear-gradient(135deg, #FBEFF3, #FDF6EE) !important; border-color: #EFD9E2 !important; }
+
+  /* Alt bar + chat input — koyu kalıyordu, aydınlığa çevir */
+  [data-testid="stBottom"], [data-testid="stBottom"] > div,
+  [data-testid="stBottomBlockContainer"] { background: transparent !important; }
+  [data-testid="stChatInput"] {
+      background: #FFFFFF !important; border: 1px solid #DADCE3 !important;
+      box-shadow: 0 2px 10px -4px rgba(16,24,40,0.12) !important; }
+  [data-testid="stChatInput"] textarea { color: #1c2330 !important; }
+  [data-testid="stChatInput"] textarea::placeholder { color: #9aa0ac !important; }
+
+  /* Expander — gövde + BAŞLIK (summary koyu kalıyordu) */
+  [data-testid="stExpander"] { background: #FFFFFF !important; border: 1px solid #E6E8EE !important; }
+  [data-testid="stExpander"] details,
+  [data-testid="stExpander"] summary,
+  [data-testid="stExpander"] > details > summary,
+  [data-testid="stExpanderHeader"] {
+      background: #FFFFFF !important; color: #1c2330 !important; }
+  [data-testid="stExpander"] summary:hover { background: #F7F8FA !important; }
+  [data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span { color: #1c2330 !important; }
+
+  /* Yardım (?) ikonu — açık zeminde nötr gri, hover'da bordo.
+     NOT: Yeni Streamlit'te ikon SVG değil Material Symbols FONT ikonu
+     (span[data-testid="stIconMaterial"]) — bu yüzden svg'ye ek olarak
+     span/color da hedeflenmeli; genel '.stApp span' koyu metin kuralını ezmek
+     için buradaki kurallar ondan sonra gelir. */
+  [data-testid="stTooltipHoverTarget"],
+  [data-testid="stTooltipHoverTarget"] *,
+  [data-testid="stTooltipIcon"],
+  [data-testid="stTooltipIcon"] *,
+  [data-testid="stTooltipHoverTarget"] [data-testid="stIconMaterial"] {
+      color: #A6ACB8 !important; fill: #A6ACB8 !important; opacity: 1 !important; }
+  [data-testid="stTooltipHoverTarget"] svg,
+  [data-testid="stTooltipHoverTarget"] svg * { stroke: none !important; }
+  [data-testid="stTooltipHoverTarget"]:hover,
+  [data-testid="stTooltipHoverTarget"]:hover *,
+  [data-testid="stTooltipIcon"]:hover,
+  [data-testid="stTooltipIcon"]:hover * {
+      color: #B21E55 !important; fill: #B21E55 !important; }
+
+  /* Tooltip balonu — DIŞ katman (BaseWeb) beyaz kartın kendisi olsun; içerik şeffaf.
+     (Önceki yaklaşım iç kutuyu beyaz yapıyordu, dış koyu katman kalın siyah çerçeve
+     gibi görünüyordu.) */
+  div[data-baseweb="tooltip"], div[role="tooltip"] {
+      background: #FFFFFF !important; color: #2a3140 !important;
+      border: 1px solid #E6E8EE !important; border-left: 3px solid #C2185B !important;
+      border-radius: 12px !important;
+      box-shadow: 0 12px 34px -12px rgba(16,24,40,0.28) !important; }
+  div[data-baseweb="tooltip"] > div, div[role="tooltip"] > div {
+      background: transparent !important; }
+  [data-testid="stTooltipContent"] {
+      background: transparent !important; color: #2a3140 !important;
+      border: none !important; box-shadow: none !important;
+      padding: 11px 15px !important; font-size: 0.9rem !important; line-height: 1.5 !important; }
+  [data-testid="stTooltipContent"] * {
+      color: #2a3140 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+
+  /* Butonlar (öneri çipleri = secondary) — primary'ye dokunma */
+  .stButton button[kind="secondary"] {
+      background: #FFFFFF !important; border: 1px solid #E1E3EA !important; color: #1c2330 !important;
+      box-shadow: 0 1px 2px rgba(16,24,40,0.04) !important; }
+  .stButton button[kind="secondary"]:hover {
+      border-color: rgba(178,30,85,0.45) !important; background: #FDF6F8 !important; }
+
+  /* Bölüm SVG ikonu beyaz stroke → aydınlıkta görünmez; info-card'da bordo yap
+     (hero koyu bordo zeminde kaldığı için orada beyaz kalır) */
+  .info-card .bolum-icon svg { stroke: #B21E55 !important; }
+
+  /* Seçili dropdown öğesi: base CSS beyaz zorluyordu → bordo (açık zeminde okunur) */
+  [data-baseweb="popover"] [role="option"][aria-selected="true"],
+  [data-baseweb="popover"] [role="option"][aria-selected="true"] *,
+  [data-baseweb="popover"] [role="option"][aria-checked="true"],
+  [data-baseweb="popover"] [role="option"][aria-checked="true"] *,
+  [data-baseweb="menu"] li[aria-selected="true"],
+  [data-baseweb="menu"] li[aria-selected="true"] * { color: #7B1E3A !important; }
+
+  /* Chat input SİYAH kalıyordu — tüm iç katmanları aydınlığa çevir */
+  [data-testid="stBottom"], [data-testid="stBottom"] > div,
+  [data-testid="stBottomBlockContainer"] { background: transparent !important; }
+  [data-testid="stChatInput"],
+  [data-testid="stChatInput"] > div,
+  [data-testid="stChatInput"] [data-baseweb="base-input"],
+  [data-testid="stChatInput"] [data-baseweb="textarea"] {
+      background: #FFFFFF !important; border-color: #DADCE3 !important; }
+  [data-testid="stChatInput"] textarea { background: transparent !important; color: #1c2330 !important; }
+  [data-testid="stChatInput"] button svg { fill: #7B1E3A !important; }
+
+  /* Number input / diğer baseweb girişleri (GPA sekmesi) */
+  .stNumberInput [data-baseweb="input"], .stNumberInput input,
+  [data-baseweb="input"], [data-baseweb="base-input"] {
+      background: #FFFFFF !important; color: #1c2330 !important; border-color: #DADCE3 !important; }
+  .stNumberInput button { background: #F1F3F7 !important; color: #1c2330 !important; }
+  /* −/+ ikonları beyaz SVG → koyu yap (stroke EKLEME, yoksa kalınlaşır — sadece fill) */
+  .stNumberInput button svg, .stNumberInput button svg * { fill: #1c2330 !important; stroke: none !important; }
+
+  /* GPA tablosu: glide-canvas hücreleri CSS ile renklenemez (Streamlit sınırı).
+     En azından çerçeveyi aydınlığa uydur — koyu tablo temiz bir kart içinde dursun. */
+  [data-testid="stDataFrame"], [data-testid="stDataFrameResizable"],
+  [data-testid="stDataEditor"], [data-testid="stDataEditorResizable"] {
+      border: 1px solid #DADCE3 !important; border-radius: 12px !important;
+      overflow: hidden !important; box-shadow: 0 1px 4px rgba(16,24,40,0.06) !important; }
+
+  ::-webkit-scrollbar-thumb { background: rgba(16,24,40,0.18) !important; }
+</style>
+"""
+
+
+def theme_css(theme: str) -> str:
+    """Okunabilirlik (her zaman) + aydınlık override (theme='light' ise)."""
+    css = _READABILITY_CSS
+    if theme == "light":
+        css += _LIGHT_CSS
+    return css
+
 SUGGESTIONS = {'bilgisayar': [('📚', '2023 girişliyim 3. dönem hangi dersler var?'),
                 ('🔢', 'COMP 101 dersi kaç AKTS?'),
                 ('🧩', 'COMP 305 dersinin ön şartı nedir?'),

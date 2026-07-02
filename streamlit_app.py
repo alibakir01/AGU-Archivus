@@ -37,7 +37,18 @@ from src import gpa, rag_cloud, ui_theme
 # --------------------------------------------------------------------------- #
 st.set_page_config(page_title="AGÜ Öğrenci Asistanı", page_icon="🎓",
                    layout="wide", initial_sidebar_state="expanded")
+
+# Tema: koyu (varsayılan) veya aydınlık. Sidebar'daki toggle session_state'i günceller.
+theme = st.session_state.get("theme", "dark")
 st.markdown(ui_theme.global_css(), unsafe_allow_html=True)
+st.markdown(ui_theme.theme_css(theme), unsafe_allow_html=True)
+
+# Tema switch — sağ üstte sabit, küçük kayan bar (CSS ile konumlanır)
+with st.container(key="theme_switch"):
+    _dark = st.toggle("🌙" if theme == "dark" else "☀️", value=(theme == "dark"))
+if ("dark" if _dark else "light") != theme:
+    st.session_state["theme"] = "dark" if _dark else "light"
+    st.rerun()
 
 _LOGO_PATH = Path(__file__).parent / "assets" / "agu_logo.png"
 try:
@@ -146,8 +157,7 @@ with chat_tab:
     if not st.session_state["messages"] and "pending_q" not in st.session_state:
         st.markdown(
             '<div class="welcome"><h3>💬 Sormak istediğin bir şey var mı?</h3>'
-            '<p>Aşağıdaki örneklerden birini seç ya da kendi sorunu yaz.</p>'
-            '<p>AGU Archivus bir yapay zeka asistanıdır, hata yapabilir.</p></div>',
+            '<p>Aşağıdaki örneklerden birini seç ya da kendi sorunu yaz.</p></div>',
             unsafe_allow_html=True,
         )
         cols = st.columns(2)
@@ -187,6 +197,12 @@ with chat_tab:
     if prompt := st.chat_input("Örn: 2023 girişliyim 3. dönem hangi dersler var?"):
         st.session_state["pending_q"] = prompt
         st.rerun()
+
+    # Kalıcı uyarı — mesaj kutusunun hemen altında
+    st.markdown(
+        '<div class="chat-disclaimer">AGU Archivus bir yapay zeka asistanıdır, hata yapabilir.</div>',
+        unsafe_allow_html=True,
+    )
 
 # ============================ GPA HESAPLAYICI ============================
 with gpa_tab:

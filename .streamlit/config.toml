@@ -1,0 +1,5 @@
+# Streamlit base tema — sabit "dark" (sistem tercihinden bağımsız, tutarlı chrome).
+# Uygulama içi Aydınlık/Karanlık geçişi CSS override ile yapılır (src/ui_theme.py).
+[theme]
+base = "dark"
+primaryColor = "#C2185B"
