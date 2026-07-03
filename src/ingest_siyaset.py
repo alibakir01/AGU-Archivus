@@ -74,6 +74,11 @@ def _parse_course_block(cells: list[str], offset: int) -> dict | None:
         return None
     if kod_raw.upper().startswith("DÖNEM TOPLAM") or kod_raw.upper().startswith("YIL TOPLAM"):
         return None
+    # Geçerli ders kodu en az bir HARF içerir (ör. "POLS 101"). Sadece rakamdan
+    # oluşan hücreler (GENEL TOPLAM bloğunun T/P/Kredi/AKTS sayıları, ör. "143 6")
+    # ders değildir — atla.
+    if not re.search(r"[A-Za-z]", kod_raw):
+        return None
     teo = (cells[offset + 2] or "").strip()
     p = (cells[offset + 3] or "").strip()
     kredi = (cells[offset + 4] or "").strip()

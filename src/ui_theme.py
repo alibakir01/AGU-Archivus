@@ -116,20 +116,45 @@ _LIGHT_CSS = """
   [data-testid="stSidebar"] .sidebar-logo { border-bottom: 1px solid #EAECF1 !important; }
   [data-testid="stSidebar"] .sidebar-logo span { color: #8a90a0 !important; opacity: 1 !important; }
 
+  /* Sidebar daralt/genişlet (« / ») oku — aydınlıkta beyaz kalıp görünmüyordu,
+     hover'a gerek kalmadan koyulaştır (font ikon + svg ikisini de hedefle) */
+  [data-testid="stSidebarCollapseButton"],
+  [data-testid="stSidebarCollapseButton"] *,
+  [data-testid="stSidebarCollapseButton"] svg,
+  [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
+  [data-testid="collapsedControl"],
+  [data-testid="collapsedControl"] *,
+  [data-testid="stExpandSidebarButton"],
+  [data-testid="stExpandSidebarButton"] * {
+      color: #5a6172 !important; fill: #5a6172 !important; opacity: 1 !important;
+  }
+  [data-testid="stSidebarCollapseButton"]:hover,
+  [data-testid="stSidebarCollapseButton"]:hover *,
+  [data-testid="collapsedControl"]:hover,
+  [data-testid="collapsedControl"]:hover * {
+      color: #B21E55 !important; fill: #B21E55 !important;
+  }
+
   /* Vurgular: bordo (altın beyazda okunmaz) */
   .info-card strong, .detail-card strong, [data-testid="stExpander"] summary { color: #B21E55 !important; }
 
   /* Kartlar — beyaz + yumuşak gölge */
   .info-card {
-      background: #FFFFFF !important; border: 1px solid #EADCE3 !important;
-      box-shadow: 0 1px 3px rgba(16,24,40,0.05) !important; color: #333a48 !important; }
+      background: #FFFFFF !important; border: 1.5px solid #E0A9C0 !important;
+      box-shadow: 0 3px 10px -3px rgba(178,30,85,0.16) !important; color: #333a48 !important; }
   .detail-card {
       background: #FFF7E8 !important; border-left: 3px solid #FFB800 !important; color: #4a4230 !important; }
   .welcome { color: #3a4150 !important; opacity: 1 !important; }
 
   /* Selectbox (kapalı görünüm) — sadece sidebar değil, TÜM alanlar (GPA sekmesi dahil) */
   [data-baseweb="select"] > div {
-      background: #FFFFFF !important; border: 1px solid #DADCE3 !important; }
+      background: #FFFFFF !important; border: 1.5px solid #B9BEC9 !important;
+      box-shadow: 0 1px 3px rgba(16,24,40,0.06) !important; }
+  /* Odaklanınca/hover marka bordosu ile vurgula */
+  [data-baseweb="select"] > div:hover { border-color: #C2185B !important; }
+  [data-baseweb="select"] > div:focus-within {
+      border-color: #B21E55 !important;
+      box-shadow: 0 0 0 3px rgba(178,30,85,0.12) !important; }
   [data-baseweb="select"] > div * { color: #1c2330 !important; }
   [data-baseweb="select"] svg { fill: #5a6172 !important; }
   [data-baseweb="popover"], [data-baseweb="menu"], [data-baseweb="select-dropdown"],
@@ -317,14 +342,29 @@ SUGGESTIONS = {'bilgisayar': [('📚', '2023 girişliyim 3. dönem hangi dersler
 BOLUM_SVG = {'bilgisayar': '<span class="bolum-icon" title="Bilgisayar Mühendisliği"><svg viewBox="0 0 24 24" '
                'xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 '
                '21h8"/><path d="M12 17v4"/><path d="M9 8l-2 2 2 2"/><path d="M15 8l2 2-2 2"/></svg></span>',
- 'makine': '<span class="bolum-emoji" title="Makine Mühendisliği">⚙️</span>',
+ 'makine': ('<span class="bolum-icon" title="Makine Mühendisliği">'
+            '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<circle cx="12" cy="12" r="3"/>'
+            '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06'
+            'a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 '
+            '0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 '
+            '0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9'
+            'a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 '
+            '1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 '
+            '1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9'
+            'a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
+            '</svg></span>'),
  'endustri': '<span class="bolum-icon" title="Endüstri Mühendisliği"><svg viewBox="0 0 24 24" '
              'xmlns="http://www.w3.org/2000/svg"><path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5"/><rect '
              'x="12" y="9" width="3" height="9"/><rect x="17" y="5" width="3" height="13"/></svg></span>',
  'elektrik': '<span class="bolum-icon" title="Elektrik-Elektronik Mühendisliği"><svg viewBox="0 0 24 24" '
              'xmlns="http://www.w3.org/2000/svg"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 '
              '2"/></svg></span>',
- 'insaat': '<span class="bolum-emoji" title="İnşaat Mühendisliği">🏗️</span>',
+ 'insaat': ('<span class="bolum-icon" title="İnşaat Mühendisliği">'
+            '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M3.5 21H12"/><path d="M7.5 21V4"/><path d="M7.5 4H19"/>'
+            '<path d="M7.5 8L11.5 4"/><path d="M18 4V9"/>'
+            '<path d="M16.7 9H19.3L18 11.2Z"/></svg></span>'),
  'malzeme': '<span class="bolum-icon" title="Malzeme Bilimi ve Nanoteknoloji"><svg viewBox="0 0 24 24" '
             'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="1.2" fill="#fff"/><ellipse cx="12" cy="12" '
             'rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" '
@@ -340,8 +380,10 @@ BOLUM_SVG = {'bilgisayar': '<span class="bolum-icon" title="Bilgisayar Mühendis
  'siyaset': '<span class="bolum-icon" title="Siyaset Bilimi ve Uluslararası İlişkiler"><svg viewBox="0 0 24 24" '
             'xmlns="http://www.w3.org/2000/svg"><path d="M3 21h18"/><path d="M12 3v18"/><path d="M12 3l7 4-7 4"/><path '
             'd="M5 21V10"/><path d="M19 21V14"/></svg></span>',
- 'psikoloji': '<span class="bolum-emoji" title="Psikoloji" style="font-family: \'Times New Roman\', serif; '
-              'font-weight: 700; font-size: 1.15em; line-height: 1;">Ψ</span>',
+ 'psikoloji': ('<span class="bolum-icon" title="Psikoloji">'
+               '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+               '<path d="M7 4V8Q7 12 12 12Q17 12 17 8V4"/>'
+               '<path d="M12 4V20"/><path d="M9.5 20H14.5"/></svg></span>'),
  'biyomuhendislik': '<span class="bolum-icon" title="Biyomühendislik"><svg viewBox="0 0 24 24" '
                     'xmlns="http://www.w3.org/2000/svg"><path d="M9 3c0 4 6 5 6 9s-6 5-6 9"/><path d="M15 3c0 4-6 5-6 '
                     '9s6 5 6 9"/><path d="M8.5 7h7"/><path d="M8.5 17h7"/><path d="M10 5.5h4"/><path d="M10 '

@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src import gpa
+from src import gpa, privacy
 from src.rag import BOLUM_ADI_MAP, answer_stream, detect_bolum
 
 
@@ -583,8 +583,25 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:7px;font-weight:700;margin-bottom:2px;">'
+        '<svg width="17" height="17" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<g stroke="#3a3a3a" stroke-width="1.4" stroke-linejoin="round">'
+        '<rect x="1.6" y="2" width="20.8" height="5.6" rx="1.6" fill="#F5C877"/>'
+        '<rect x="1.6" y="9.2" width="20.8" height="5.6" rx="1.6" fill="#A6D98A"/>'
+        '<rect x="1.6" y="16.4" width="20.8" height="5.6" rx="1.6" fill="#ABE4F5"/></g>'
+        '<g fill="#EF5F5F" stroke="#3a3a3a" stroke-width="0.9" stroke-linejoin="round">'
+        '<path d="M6.4 3.5 L8.8 4.8 L6.4 6.1 Z"/><path d="M6.4 10.7 L8.8 12 L6.4 13.3 Z"/>'
+        '<path d="M6.4 17.9 L8.8 19.2 L6.4 20.5 Z"/></g>'
+        '<g stroke="#3a3a3a" stroke-width="1.3" stroke-linecap="round">'
+        '<line x1="11" y1="4.2" x2="19.5" y2="4.2"/><line x1="11" y1="5.6" x2="17" y2="5.6"/>'
+        '<line x1="11" y1="11.4" x2="19.5" y2="11.4"/><line x1="11" y1="12.8" x2="17" y2="12.8"/>'
+        '<line x1="11" y1="18.6" x2="19.5" y2="18.6"/><line x1="11" y1="20" x2="17" y2="20"/></g>'
+        '</svg><span>Bölüm Seçimi</span></div>',
+        unsafe_allow_html=True,
+    )
     bolum_secim = st.selectbox(
-        "📚 **Bölüm Seçimi**",
+        "Bölüm Seçimi",
         [
             "Bilgisayar Mühendisliği",
             "Makine Mühendisliği",
@@ -600,6 +617,7 @@ with st.sidebar:
             "Biyomühendislik",
             "Moleküler Biyoloji ve Genetik",
         ],
+        label_visibility="collapsed",
     )
     BOLUM_ID_MAP = {
         "Bilgisayar Mühendisliği": "bilgisayar",
@@ -625,7 +643,20 @@ with st.sidebar:
             '<path d="M9 8l-2 2 2 2"/><path d="M15 8l2 2-2 2"/>'
             '</svg></span>'
         ),
-        "makine": '<span class="bolum-emoji" title="Makine Mühendisliği">⚙️</span>',
+        "makine": (
+            '<span class="bolum-icon" title="Makine Mühendisliği">'
+            '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<circle cx="12" cy="12" r="3"/>'
+            '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06'
+            'a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 '
+            '0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 '
+            '0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9'
+            'a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 '
+            '1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 '
+            '1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9'
+            'a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
+            '</svg></span>'
+        ),
         "endustri": (
             '<span class="bolum-icon" title="Endüstri Mühendisliği">'
             '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
@@ -641,7 +672,13 @@ with st.sidebar:
             '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
             '</svg></span>'
         ),
-        "insaat": '<span class="bolum-emoji" title="İnşaat Mühendisliği">🏗️</span>',
+        "insaat": (
+            '<span class="bolum-icon" title="İnşaat Mühendisliği">'
+            '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M3.5 21H12"/><path d="M7.5 21V4"/><path d="M7.5 4H19"/>'
+            '<path d="M7.5 8L11.5 4"/><path d="M18 4V9"/>'
+            '<path d="M16.7 9H19.3L18 11.2Z"/></svg></span>'
+        ),
         "malzeme": (
             '<span class="bolum-icon" title="Malzeme Bilimi ve Nanoteknoloji">'
             '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
@@ -686,9 +723,10 @@ with st.sidebar:
             '</svg></span>'
         ),
         "psikoloji": (
-            '<span class="bolum-emoji" title="Psikoloji" '
-            'style="font-family: \'Times New Roman\', serif; font-weight: 700; '
-            'font-size: 1.15em; line-height: 1;">Ψ</span>'
+            '<span class="bolum-icon" title="Psikoloji">'
+            '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M7 4V8Q7 12 12 12Q17 12 17 8V4"/>'
+            '<path d="M12 4V20"/><path d="M9.5 20H14.5"/></svg></span>'
         ),
         "biyomuhendislik": (
             '<span class="bolum-icon" title="Biyomühendislik">'
@@ -732,7 +770,15 @@ with st.sidebar:
     )
 
     st.divider()
-    st.markdown("⚙️ **Cevap Detay Seviyesi**")
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:7px;font-weight:700;">'
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="#E6105A" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="12" cy="4.3" r="2.6"/>'
+        '<rect x="9.6" y="8.4" width="4.8" height="12.8" rx="2.2"/>'
+        '</svg><span>Cevap Detay Seviyesi</span></div>',
+        unsafe_allow_html=True,
+    )
 
     level_info = {
         "Kısa": "Net, tek bilgi soruları için (örn. COMP 101 kaç kredi?)",
@@ -814,7 +860,7 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
 # ============================ TABS ============================
-chat_tab, gpa_tab = st.tabs(["💬 Asistan", "📊 GPA Hesaplayıcı"])
+chat_tab, gpa_tab = st.tabs(["💬 Asistan", ":material/school: GPA Hesaplayıcı"])
 
 # ============================ ÖNERİLER (boş durum) ============================
 SUGGESTIONS = {
@@ -1111,7 +1157,9 @@ with chat_tab:
     # 2) Bekleyen bir soru varsa: yeni turn'ü tarihçenin hemen altına stream'le
     pending = st.session_state.pop("_processing_q", None)
     if pending:
-        q = pending
+        # Gizlilik: TC/öğrenci no gibi kişisel bilgileri maskele (LLM/ekran öncesi)
+        _had_pii = privacy.has_personal_info(pending)
+        q = privacy.mask_personal_info(pending)
         detected = detect_bolum(q)
         effective_bolum = detected if detected and detected != bolum_id else bolum_id
         auto_switched = detected is not None and detected != bolum_id
@@ -1119,6 +1167,8 @@ with chat_tab:
         st.session_state["messages"].append({"role": "user", "content": q})
         with st.chat_message("user", avatar="🧑‍🎓"):
             st.markdown(q)
+            if _had_pii:
+                st.caption("🔒 Güvenliğin için girdiğin kişisel bilgi(ler) otomatik gizlendi.")
             if auto_switched:
                 st.info(
                     f"🔀 Bu soru **{BOLUM_ADI_MAP[detected]}** ile ilgili görünüyor — "
@@ -1149,7 +1199,7 @@ with chat_tab:
                         '<div style="display:flex;align-items:center;gap:8px;'
                         'opacity:0.75;font-size:0.95rem;">'
                         '<span class="thinking-dot">●</span> '
-                        '<em>Düşünüyorum…</em></div>'
+                        '<em>Dökümanlar analiz ediliyor…</em></div>'
                         '<style>.thinking-dot{animation:pulse 1.2s ease-in-out infinite;'
                         'color:#FFB800;}@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}</style>',
                         unsafe_allow_html=True,
@@ -1181,6 +1231,7 @@ with chat_tab:
 
     # 3) Chat input — her zaman EN ALTTA (DOM sırasının sonunda)
     new_q = st.chat_input("Örn: 2023 girişliyim 3. dönem hangi dersler var?")
+    st.caption("🔒 Lütfen TC kimlik no, öğrenci no gibi **kişisel bilgilerinizi girmeyin**.")
     pending_from_suggestion = st.session_state.pop("pending_q", None)
     submission = new_q or pending_from_suggestion
     if submission:
@@ -1190,7 +1241,16 @@ with chat_tab:
 
 # ============================ GPA TAB ============================
 with gpa_tab:
-    st.markdown("### 📊 GPA Hesaplayıcı")
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:9px;margin:0.2rem 0 0.4rem;">'
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M16 8C16 10.21 14.21 12 12 12C9.79 12 8 10.21 8 8L8.11 7.06L5 5.5L12 '
+        '2L19 5.5V10.5H18V6L15.89 7.06L16 8M12 14C16.42 14 20 15.79 20 18V20H4V18C4 '
+        '15.79 7.58 14 12 14Z"/></svg>'
+        '<span style="font-size:1.5rem;font-weight:700;">GPA Hesaplayıcı</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption(
         f"**Aktif bölüm:** {bolum_secim} · "
         "Sınıfını seç, bu dönem aldığın derslere harf notunu gir, geçmiş ortalamanı yaz — "

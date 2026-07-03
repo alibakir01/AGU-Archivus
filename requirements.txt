@@ -14,6 +14,9 @@ groq==1.2.0
 openai>=1.50.0
 python-dotenv==1.2.2
 
+# Feedback → Google Sheets (👍/👎 kaydı)
+gspread>=6.0,<7
+
 # Bulut API (app_cloud.py) — Streamlit Cloud kullanmaz ama hafif, kalsın
 fastapi==0.138.2
 uvicorn==0.46.0

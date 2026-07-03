@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import re
-from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,11 +32,12 @@ YUKSEK_ONOR_THRESHOLD = 3.50
 
 # Default Pass/Fail (GPA'ya katılmaz, kullanıcı toggle edebilir)
 DEFAULT_PF_PATTERNS = [
-    r"\bSTAJ\b",
-    r"\bPRACTICE\b",
-    r"\bSUMMER\s*PRACTICE\b",
+    r"\bSTAJ",                       # Staj, Stajı, Stajları (Türkçe ekler)
+    r"\bINTERNSHIP\b",              # ME 311/411, ECON 499
+    r"\bPRACTICE\b",               # Summer Practice, Workplace Practice
+    r"\bTRAINING\b",               # IE 197/297/397 Summer Training
     r"\bWORKPLACE\s*EXPERIENCE\b",
-    r"^CP\s*\d+",            # CP 100 Kariyer Planlama
+    r"^CP\s*\d+",                  # CP 100 Kariyer Planlama
 ]
 
 EXTRA_TYPES = ["None", "Yatay geçiş", "Eski müfredat (intibak)", "Yaz okulu", "Diğer"]
@@ -50,9 +50,26 @@ def _to_int(v, default: int = 0) -> int:
         return default
 
 
-@lru_cache(maxsize=1)
+def _jsonl_signature() -> tuple:
+    """processed/*.jsonl dosyalarının (ad, mtime) imzası. Dosya değişince cache
+    tazelenir — böylece ingest sonrası app'i yeniden başlatmaya gerek kalmaz."""
+    sig = []
+    for p in sorted(PROCESSED_DIR.glob("*.jsonl")):
+        try:
+            sig.append((p.name, p.stat().st_mtime_ns))
+        except OSError:
+            pass
+    return tuple(sig)
+
+
+_mufredat_cache: dict = {"sig": None, "data": ()}
+
+
 def _all_mufredat_chunks() -> tuple[dict, ...]:
-    """Tüm processed/*.jsonl içinden tip='mufredat' kayıtlarını cache'le."""
+    """Tüm processed/*.jsonl içinden tip='mufredat' kayıtları (mtime-duyarlı cache)."""
+    sig = _jsonl_signature()
+    if _mufredat_cache["sig"] == sig:
+        return _mufredat_cache["data"]
     rows = []
     for jsonl in sorted(PROCESSED_DIR.glob("*.jsonl")):
         try:
@@ -70,7 +87,9 @@ def _all_mufredat_chunks() -> tuple[dict, ...]:
                         rows.append(md)
         except Exception:
             continue
-    return tuple(rows)
+    _mufredat_cache["sig"] = sig
+    _mufredat_cache["data"] = tuple(rows)
+    return _mufredat_cache["data"]
 
 
 def available_curricula(bolum: str) -> list[str]:
@@ -85,7 +104,11 @@ def available_curricula(bolum: str) -> list[str]:
 
 
 def load_courses(bolum: str, mufredat_yili: str) -> list[dict]:
-    """Belirli bölüm + müfredat yılına ait derslerin tekil listesi."""
+    """Belirli bölüm + müfredat yılına ait derslerin tekil listesi.
+    Eksik kredi/AKTS, aynı dersin genel katalogdaki dolu kaydından tamamlanır
+    (ör. MATH 101 bir bölümde boş girilmişse başka bölümdeki 5 kredi'den alınır).
+    Staj/uygulama gibi doğal 0-kredili (Pass/Fail) dersler zenginleştirilmez."""
+    catalog = all_courses_catalog()
     rows: list[dict] = []
     seen_counts: dict[str, int] = {}
     for md in _all_mufredat_chunks():
@@ -97,7 +120,11 @@ def load_courses(bolum: str, mufredat_yili: str) -> list[dict]:
         base_kod = (md.get("ders_kodu") or "").strip()
         if not base_kod:
             continue
-            
+        # Geçerli ders kodu en az bir HARF içerir (ör. "COMP 101"). Sadece rakamdan
+        # oluşanlar (ör. tablo toplam satırından sızan "143") çöptür, atla.
+        if not re.search(r"[A-Za-z]", base_kod):
+            continue
+
         donem = _to_int(md.get("donem"), 99)
         
         # Seçmeli/Havuz dersleri (kodunda X geçenler) her dönem farklı sayılır
@@ -115,11 +142,25 @@ def load_courses(bolum: str, mufredat_yili: str) -> list[dict]:
                 continue
             seen_counts[kod] = 1
             
+        kredi = _to_int(md.get("kredi"), 0)
+        akts = _to_int(md.get("akts"), 0)
+        ders_adi = md.get("ders_adi", "")
+        # Eksik kredi/AKTS'yi katalogdan tamamla (havuz X'li dersler ve doğal
+        # 0-kredili staj/uygulama dersleri hariç)
+        if (kredi == 0 or akts == 0) and "X" not in base_kod.upper() \
+                and not is_default_pf(base_kod, ders_adi):
+            cat = catalog.get(base_kod.upper())
+            if cat:
+                if kredi == 0:
+                    kredi = _to_int(cat.get("kredi"), 0)
+                if akts == 0:
+                    akts = _to_int(cat.get("akts"), 0)
+
         rows.append({
             "ders_kodu": kod,
-            "ders_adi": md.get("ders_adi", ""),
-            "kredi": _to_int(md.get("kredi"), 0),
-            "akts": _to_int(md.get("akts"), 0),
+            "ders_adi": ders_adi,
+            "kredi": kredi,
+            "akts": akts,
             "donem": donem,
         })
     rows.sort(key=lambda r: (r["donem"], r["ders_kodu"]))
@@ -138,12 +179,18 @@ CATALOG_TIPS = {
 }
 
 
-@lru_cache(maxsize=1)
+_catalog_cache: dict = {"sig": None, "data": None}
+
+
 def all_courses_catalog() -> dict[str, dict]:
     """Tüm bölümlerin tüm müfredat + seçmeli + katalog kayıtlarındaki dersler.
     Anahtar: DERS_KODU (büyük harf). Aynı kod birden fazla yerde varsa daha
     zengin bilgi (kredi/AKTS dolu olan) tercih edilir. Placeholder kodlar
-    (içinde 'X' olanlar — örn. MSNETX1, GLB 1XX) hariç tutulur."""
+    (içinde 'X' olanlar — örn. MSNETX1, GLB 1XX) hariç tutulur.
+    (mtime-duyarlı cache — ingest sonrası app restart gerekmez.)"""
+    sig = _jsonl_signature()
+    if _catalog_cache["sig"] == sig and _catalog_cache["data"] is not None:
+        return _catalog_cache["data"]
     catalog: dict[str, dict] = {}
     for jsonl in sorted(PROCESSED_DIR.glob("*.jsonl")):
         try:
@@ -161,6 +208,10 @@ def all_courses_catalog() -> dict[str, dict]:
                         continue
                     kod = (md.get("ders_kodu") or "").strip().upper()
                     if not kod or "X" in kod:
+                        continue
+                    # Geçerli kod en az bir harf içerir; sadece rakamsa (tablo
+                    # toplam satırı sızıntısı, ör. "143") çöptür → atla.
+                    if not re.search(r"[A-Za-z]", kod):
                         continue
                     kredi = _to_int(md.get("kredi"), 0)
                     akts = _to_int(md.get("akts"), 0)
@@ -188,6 +239,8 @@ def all_courses_catalog() -> dict[str, dict]:
                             }
         except Exception:
             continue
+    _catalog_cache["sig"] = sig
+    _catalog_cache["data"] = catalog
     return catalog
 
 

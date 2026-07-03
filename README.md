@@ -29,10 +29,15 @@ Erasmus ve yatay geçiş sorularını cevaplar.
 ## Pipeline
 1. **Ingest** — `src/ingest_*.py` her bölüm/kaynak için ham dokümanları (docx, pdf, csv, xlsx, json) yapılandırılmış chunk'lara çevirir → `data/processed/*.jsonl`
 2. **Embed** — `src/embed.py` tüm chunk'ları `intfloat/multilingual-e5-large` ile embed edip ChromaDB'ye yazar → `data/chroma/`
-3. **Retrieval + LLM** — `src/rag.py` hibrit retrieval (vektör + BM25 + RRF füzyon) → cross-encoder reranker (`BAAI/bge-reranker-v2-m3`) → Groq (Llama 4 Scout 17B, bedava) ile Türkçe cevap üretir
+3. **Retrieval + LLM** — `src/rag.py` hibrit retrieval (vektör + BM25 + RRF füzyon) → cross-encoder reranker (`BAAI/bge-reranker-v2-m3`) → Mistral ile Türkçe cevap üretir
 4. **UI** — `app.py` Streamlit arayüzü (bölüm seçimi, detay seviyesi, GNO hesaplama, otomatik bölüm tespiti)
 
-> **LLM sağlayıcı:** Varsayılan Groq (`meta-llama/llama-4-scout-17b-16e-instruct`). `LLM_PROVIDER=openrouter` veya `LLM_PROVIDER=auto` ile OpenRouter'a (gpt-oss-120b) geçiş/fallback desteklenir.
+> **LLM sağlayıcı (varsayılan `mistral` — 3 katman):**
+> 1. **Kısa & context'siz sorular** (< ~1K token) → **Groq** (`llama-4-scout`) hız şeridi
+> 2. **Normal/uzun sorular** → **`mistral-small-2506`** (ana motor)
+> 3. **Small tıkanırsa** → **`mistral-medium-2505`** (fallback)
+>
+> `LLM_PROVIDER` ile override edilebilir: `groq`, `openrouter`, `auto` (legacy: Groq→OpenRouter). Groq anahtarı yoksa hız şeridi otomatik devre dışı kalır, her şey Mistral'e gider. Aynı mantık hem `rag.py` (yerel) hem `rag_cloud.py` (canlı) içinde çalışır.
 
 ## Kurulum
 ```bash
@@ -119,7 +124,7 @@ sürümü** çalışır: `streamlit_app.py` → `src/rag_cloud.py` (Voyage + Pin
 2. [share.streamlit.io](https://share.streamlit.io) → **New app** → repoyu seç →
    **Main file path:** `streamlit_app.py`.
 3. **Advanced settings → Secrets:** `.streamlit/secrets.toml.example` içeriğini gerçek
-   anahtarlarla yapıştır (`VOYAGE_AI_KEY`, `PINECONE_API_KEY`, `GROQ_API_KEY`, `LLM_PROVIDER`).
+   anahtarlarla yapıştır (`VOYAGE_AI_KEY`, `PINECONE_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `LLM_PROVIDER`).
 4. Deploy. (Anahtarlar `.gitignore` ile repodan korunur; sadece Secrets paneline girilir.)
 
 **Yerel test:** `streamlit run streamlit_app.py` (anahtarlar `.env`'den okunur).

@@ -7,6 +7,7 @@ bulut yolu (src/rag_cloud.py: Voyage + Pinecone, torch YOK). GPA: src/gpa.py.
 Çalıştır (yerel):  streamlit run streamlit_app.py
 """
 import base64
+import json
 import os
 from pathlib import Path
 
@@ -15,8 +16,10 @@ import streamlit as st
 # --------------------------------------------------------------------------- #
 # Anahtar köprüsü: Streamlit Cloud secrets.toml -> os.environ (rag_cloud'dan ÖNCE)
 # --------------------------------------------------------------------------- #
-_KEYS = ["VOYAGE_AI_KEY", "PINECONE_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
-         "LLM_PROVIDER", "OPENROUTER_MODEL"]
+_KEYS = ["VOYAGE_AI_KEY", "PINECONE_API_KEY", "MISTRAL_API_KEY", "MISTRAL_MODEL",
+         "MISTRAL_MODEL_FALLBACK", "GROQ_API_KEY", "GROQ_FAST_LANE_TOKENS",
+         "OPENROUTER_API_KEY", "LLM_PROVIDER", "OPENROUTER_MODEL",
+         "RATE_LIMIT_PER_MIN"]
 try:
     for _k in _KEYS:
         if _k in st.secrets and not os.getenv(_k):
@@ -30,7 +33,76 @@ load_dotenv()
 
 import pandas as pd
 
-from src import gpa, rag_cloud, ui_theme
+from src import feedback_store, gpa, privacy, rag_cloud, rate_limit, ui_theme
+
+# Rate limit: kullanıcı başına dakikada kaç soru (env ile ayarlanabilir)
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "6"))
+
+
+def _feedback_config() -> tuple[str | None, str | None]:
+    """Google Sheets feedback için (creds_json, sheet_id). Yoksa (None, None)."""
+    creds_json = None
+    sheet_id = os.getenv("FEEDBACK_SHEET_ID")
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds_json = json.dumps(dict(st.secrets["gcp_service_account"]))
+        if not sheet_id and "FEEDBACK_SHEET_ID" in st.secrets:
+            sheet_id = str(st.secrets["FEEDBACK_SHEET_ID"])
+    except Exception:
+        pass
+    if not creds_json:  # alternatif: tek satır JSON string
+        creds_json = os.getenv("FEEDBACK_GCP_CREDS")
+    return creds_json, sheet_id
+
+
+def _log_feedback(m: dict, rating: str, comment: str = "") -> bool:
+    creds_json, sheet_id = _feedback_config()
+    return feedback_store.log_feedback(
+        creds_json, sheet_id,
+        rating=rating, bolum=m.get("bolum", ""),
+        question=m.get("question", ""), answer=m.get("content", ""),
+        comment=comment,
+    )
+
+
+def _render_rating(idx: int, m: dict) -> None:
+    """Asistan mesajı altına 👍/👎 + (👎 için) yorum kutusu."""
+    if m.get("rating"):
+        st.caption(f"{'👍' if m['rating'] == 'up' else '👎'} Geri bildirimin için teşekkürler.")
+        return
+    cols = st.columns([1, 1, 8])
+    if cols[0].button("👍", key=f"up-{idx}", help="Bu cevap işime yaradı"):
+        m["rating"] = "up"
+        _log_feedback(m, "up")
+        st.rerun()
+    if cols[1].button("👎", key=f"down-{idx}", help="Bu cevap yetersiz / yanlış"):
+        st.session_state[f"_down_{idx}"] = True
+    if st.session_state.get(f"_down_{idx}"):
+        comment = st.text_input(
+            "Neyin eksik/yanlış olduğunu yazar mısın? (opsiyonel)",
+            key=f"cmt-{idx}", placeholder="Örn: ön şartı yanlış söyledi",
+        )
+        if st.button("Gönder", key=f"send-{idx}", type="primary"):
+            m["rating"] = "down"
+            _log_feedback(m, "down", comment or "")
+            st.session_state.pop(f"_down_{idx}", None)
+            st.rerun()
+
+
+def _client_id() -> str:
+    """Kullanıcı kimliği: önce IP (refresh'e dayanıklı), yoksa oturum bazlı kimlik."""
+    try:
+        headers = st.context.headers  # Streamlit >= 1.37
+        ip = headers.get("X-Forwarded-For") or headers.get("x-forwarded-for")
+        if ip:
+            return ip.split(",")[0].strip()
+    except Exception:
+        pass
+    # IP alınamazsa (yerel/eski sürüm) oturuma özel rastgele kimlik
+    if "_client_uid" not in st.session_state:
+        import uuid
+        st.session_state["_client_uid"] = uuid.uuid4().hex
+    return st.session_state["_client_uid"]
 
 # --------------------------------------------------------------------------- #
 # Sayfa + tema
@@ -38,8 +110,8 @@ from src import gpa, rag_cloud, ui_theme
 st.set_page_config(page_title="AGÜ Öğrenci Asistanı", page_icon="🎓",
                    layout="wide", initial_sidebar_state="expanded")
 
-# Tema: koyu (varsayılan) veya aydınlık. Sidebar'daki toggle session_state'i günceller.
-theme = st.session_state.get("theme", "dark")
+# Tema: aydınlık (VARSAYILAN) veya koyu. Sidebar'daki toggle session_state'i günceller.
+theme = st.session_state.get("theme", "light")
 st.markdown(ui_theme.global_css(), unsafe_allow_html=True)
 st.markdown(ui_theme.theme_css(theme), unsafe_allow_html=True)
 
@@ -84,11 +156,29 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:7px;font-weight:700;margin-bottom:2px;">'
+        '<svg width="17" height="17" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<g stroke="#3a3a3a" stroke-width="1.4" stroke-linejoin="round">'
+        '<rect x="1.6" y="2" width="20.8" height="5.6" rx="1.6" fill="#F5C877"/>'
+        '<rect x="1.6" y="9.2" width="20.8" height="5.6" rx="1.6" fill="#A6D98A"/>'
+        '<rect x="1.6" y="16.4" width="20.8" height="5.6" rx="1.6" fill="#ABE4F5"/></g>'
+        '<g fill="#EF5F5F" stroke="#3a3a3a" stroke-width="0.9" stroke-linejoin="round">'
+        '<path d="M6.4 3.5 L8.8 4.8 L6.4 6.1 Z"/><path d="M6.4 10.7 L8.8 12 L6.4 13.3 Z"/>'
+        '<path d="M6.4 17.9 L8.8 19.2 L6.4 20.5 Z"/></g>'
+        '<g stroke="#3a3a3a" stroke-width="1.3" stroke-linecap="round">'
+        '<line x1="11" y1="4.2" x2="19.5" y2="4.2"/><line x1="11" y1="5.6" x2="17" y2="5.6"/>'
+        '<line x1="11" y1="11.4" x2="19.5" y2="11.4"/><line x1="11" y1="12.8" x2="17" y2="12.8"/>'
+        '<line x1="11" y1="18.6" x2="19.5" y2="18.6"/><line x1="11" y1="20" x2="17" y2="20"/></g>'
+        '</svg><span>Bölüm Seçimi</span></div>',
+        unsafe_allow_html=True,
+    )
     bolum_id = st.selectbox(
-        "📚 **Bölüm Seçimi**",
+        "Bölüm Seçimi",
         options=_BOLUM_IDS,
         format_func=lambda b: rag_cloud.BOLUM_ADI_MAP[b],
         index=0,
+        label_visibility="collapsed",
     )
     bolum_secim = rag_cloud.BOLUM_ADI_MAP[bolum_id]
     bolum_icon = ui_theme.BOLUM_SVG.get(bolum_id, "")
@@ -111,7 +201,15 @@ with st.sidebar:
     )
 
     st.divider()
-    st.markdown("⚙️ **Cevap Detay Seviyesi**")
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:7px;font-weight:700;">'
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="#E6105A" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="12" cy="4.3" r="2.6"/>'
+        '<rect x="9.6" y="8.4" width="4.8" height="12.8" rx="2.2"/>'
+        '</svg><span>Cevap Detay Seviyesi</span></div>',
+        unsafe_allow_html=True,
+    )
     detail_level = st.select_slider("detay", options=["Kısa", "Dengeli", "Kapsamlı"],
                                     value="Dengeli", label_visibility="collapsed")
     st.markdown(
@@ -146,7 +244,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-chat_tab, gpa_tab = st.tabs(["💬 Asistan", "📊 GPA Hesaplayıcı"])
+chat_tab, gpa_tab = st.tabs(["💬 Asistan", ":material/school: GPA Hesaplayıcı"])
 
 # ============================ ASİSTAN ============================
 with chat_tab:
@@ -167,21 +265,54 @@ with chat_tab:
                     st.session_state["pending_q"] = text
                     st.rerun()
 
-    # Geçmişi çiz
-    for m in st.session_state.messages:
+    # Geçmişi çiz (asistan mesajlarının altına 👍/👎 feedback)
+    for _idx, m in enumerate(st.session_state.messages):
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
+            if m["role"] == "assistant" and not m.get("_no_rating"):
+                _render_rating(_idx, m)
 
     # Bekleyen soruyu (yazılan ya da öneri) geçmişin ALTINDA işle
     soru = st.session_state.pop("pending_q", None)
     if soru:
+        # Gizlilik: TC/öğrenci no gibi kişisel bilgileri LLM'e/feedback'e/ekrana
+        # gitmeden ÖNCE maskele
+        _had_pii = privacy.has_personal_info(soru)
+        soru = privacy.mask_personal_info(soru)
         st.session_state.messages.append({"role": "user", "content": soru})
         with st.chat_message("user"):
             st.markdown(soru)
+            if _had_pii:
+                st.caption("🔒 Güvenliğin için girdiğin kişisel bilgi(ler) otomatik gizlendi.")
+
+        # Rate limit: bir öğrenci spam yapıp ortak kotayı tüketmesin
+        _allowed, _retry = rate_limit.check(_client_id(), max_per_min=RATE_LIMIT_PER_MIN)
+        if not _allowed:
+            uyari = (
+                f"⏳ Çok hızlısın! Dakikada en fazla **{RATE_LIMIT_PER_MIN} soru** "
+                f"sorabilirsin. Lütfen **{_retry} saniye** sonra tekrar dene."
+            )
+            with st.chat_message("assistant"):
+                st.warning(uyari)
+            # rate-limit uyarısına feedback butonu koyma
+            st.session_state.messages.append({"role": "assistant", "content": uyari, "_no_rating": True})
+            st.stop()
 
         with st.chat_message("assistant"):
+            # "Düşünme" göstergesi — retrieval sürerken kullanıcı boş ekran görmesin
+            _status = st.empty()
+            _status.markdown(
+                '<div style="display:flex;align-items:center;gap:8px;'
+                'opacity:0.75;font-size:0.95rem;">'
+                '<span class="thinking-dot">●</span> '
+                '<em>Dökümanlar analiz ediliyor…</em></div>'
+                '<style>.thinking-dot{animation:pulse 1.2s ease-in-out infinite;'
+                'color:#FFB800;}@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}</style>',
+                unsafe_allow_html=True,
+            )
             try:
                 r = rag_cloud.respond(soru, bolum=bolum_id, k=top_k)
+                _status.empty()  # analiz bitti — stream başlıyor
                 if r["mode"] == "list":
                     st.markdown(r["text"])
                     cevap = r["text"]
@@ -189,9 +320,15 @@ with chat_tab:
                     cevap = st.write_stream(r["token_iter"])
                 st.caption(f"📚 {r['n']} kaynak · {rag_cloud.BOLUM_ADI_MAP.get(r['bolum'], 'AGÜ')}")
             except Exception as e:
+                _status.empty()
                 cevap = f"Bir hata oluştu: {e}"
                 st.error(cevap)
-        st.session_state.messages.append({"role": "assistant", "content": cevap})
+        # Feedback için soru + bölümü mesajla sakla; rerun ile geçmişte 👍/👎 ile çizilir
+        st.session_state.messages.append({
+            "role": "assistant", "content": cevap,
+            "question": soru, "bolum": bolum_id,
+        })
+        st.rerun()
 
     # Mesaj kutusu HER ZAMAN en altta — yazılan soru pending'e gidip rerun ile altta işlenir
     if prompt := st.chat_input("Örn: 2023 girişliyim 3. dönem hangi dersler var?"):
@@ -200,13 +337,23 @@ with chat_tab:
 
     # Kalıcı uyarı — mesaj kutusunun hemen altında
     st.markdown(
-        '<div class="chat-disclaimer">AGU Archivus bir yapay zeka asistanıdır, hata yapabilir.</div>',
+        '<div class="chat-disclaimer">AGU Archivus bir yapay zeka asistanıdır, hata yapabilir.<br>'
+        '🔒 Lütfen TC kimlik no, öğrenci no gibi <b>kişisel bilgilerinizi girmeyin</b>.</div>',
         unsafe_allow_html=True,
     )
 
 # ============================ GPA HESAPLAYICI ============================
 with gpa_tab:
-    st.markdown("### 📊 GPA Hesaplayıcı")
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:9px;margin:0.2rem 0 0.4rem;">'
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M16 8C16 10.21 14.21 12 12 12C9.79 12 8 10.21 8 8L8.11 7.06L5 5.5L12 '
+        '2L19 5.5V10.5H18V6L15.89 7.06L16 8M12 14C16.42 14 20 15.79 20 18V20H4V18C4 '
+        '15.79 7.58 14 12 14Z"/></svg>'
+        '<span style="font-size:1.5rem;font-weight:700;">GPA Hesaplayıcı</span></div>',
+        unsafe_allow_html=True,
+    )
     st.caption(
         f"**Aktif bölüm:** {bolum_secim} · Sınıfını seç, bu dönem aldığın derslere harf notunu gir, "
         "geçmiş ortalamanı yaz — yeni Genel Ortalamanı (CGPA) hesaplayalım."

@@ -144,103 +144,115 @@ def parse_catalog() -> list[dict]:
 # 2) MÜFREDAT — 8 dönemlik ders programı (program PDF'inden, sabit veri)
 # ---------------------------------------------------------------------------
 
-# (dönem_no, yıl, sezon) -> [(kod, ad, akts, ön_şart)]
+# (dönem_no, yıl, sezon) -> [(kod, ad, kredi, akts, ön_şart)]
+# Kredi (C) ve AKTS değerleri program PDF'inin ders programı tablosundan (T P C AKTS).
 CURRICULUM: dict[tuple, list[tuple]] = {
     (1, 1, "Güz"): [
-        ("MATH 181", "Yaşam Bilimleri için Matematik I", "6", "yok"),
-        ("MBG 111", "Genel Biyoloji I", "7", "yok"),
-        ("GLB 101", "AGU Ways (AGÜ Yöntemleri)", "4", "yok"),
-        ("MBG 115", "Yaşam Bilimleri için Kimya I", "5", "yok"),
-        ("BENG 105", "Programlamaya Giriş", "6", "yok"),
-        ("ENG 101", "İngilizce I", "4", "yok"),
+        ("MATH 181", "Yaşam Bilimleri için Matematik I", "5", "6", "yok"),
+        ("MBG 111", "Genel Biyoloji I", "6", "7", "yok"),
+        ("GLB 101", "AGU Ways (AGÜ Yöntemleri)", "3", "4", "yok"),
+        ("MBG 115", "Yaşam Bilimleri için Kimya I", "4", "5", "yok"),
+        ("BENG 105", "Programlamaya Giriş", "4", "6", "yok"),
+        ("ENG 101", "İngilizce I", "4", "4", "yok"),
     ],
     (2, 1, "Bahar"): [
-        ("MATH 182", "Yaşam Bilimleri için Matematik II", "6", "MATH 181"),
-        ("MBG 112", "Genel Biyoloji II", "8", "yok"),
-        ("GLB XXX", "Seçmeli Küresel Sorunlar I", "4", "yok"),
-        ("ENG 102", "İngilizce II", "4", "yok"),
-        ("MBG 116", "Yaşam Bilimleri için Kimya II", "5", "yok"),
-        ("CP100.MBG", "Kariyer Planlaması", "1", "yok"),
+        ("MATH 182", "Yaşam Bilimleri için Matematik II", "5", "6", "MATH 181"),
+        ("MBG 112", "Genel Biyoloji II", "6", "8", "yok"),
+        ("GLB XXX", "Seçmeli Küresel Sorunlar I", "3", "4", "yok"),
+        ("ENG 102", "İngilizce II", "4", "4", "yok"),
+        ("MBG 116", "Yaşam Bilimleri için Kimya II", "4", "5", "yok"),
+        ("CP100.MBG", "Kariyer Planlaması", "1", "1", "yok"),
     ],
     (3, 2, "Güz"): [
-        ("MBG 205", "Hücre Biyolojisi", "7", "MBG 111"),
-        ("MBG 207", "Organik Kimya", "5", "MBG 115 & MBG 116"),
-        ("MBG 209", "Genetiğin Temelleri", "7", "yok"),
-        ("GLB XXX", "Seçmeli Küresel Sorunlar II", "4", "yok"),
-        ("PHYS 101", "Fizik I", "5", "yok"),
-        ("TURK 101", "Türkçe I", "2", "yok"),
+        ("MBG 205", "Hücre Biyolojisi", "5", "7", "MBG 111"),
+        ("MBG 207", "Organik Kimya", "4", "5", "MBG 115 & MBG 116"),
+        ("MBG 209", "Genetiğin Temelleri", "5", "7", "yok"),
+        ("GLB XXX", "Seçmeli Küresel Sorunlar II", "3", "4", "yok"),
+        ("PHYS 101", "Fizik I", "4", "5", "yok"),
+        ("TURK 101", "Türkçe I", "2", "2", "yok"),
     ],
     (4, 2, "Bahar"): [
-        ("MBG 204", "Biyoistatistik", "6", "yok"),
-        ("MBG 206", "Mikrobiyoloji", "7", "MBG 112"),
-        ("MBG 208", "Moleküler Biyoloji", "7", "MBG 111"),
-        ("MBG 210", "Bilim ve Etik", "4", "yok"),
-        ("GLB XXX", "Seçmeli Küresel Sorunlar III", "4", "yok"),
-        ("TURK 102", "Türkçe II", "2", "yok"),
+        ("MBG 204", "Biyoistatistik", "4", "6", "yok"),
+        ("MBG 206", "Mikrobiyoloji", "5", "7", "MBG 112"),
+        ("MBG 208", "Moleküler Biyoloji", "5", "7", "MBG 111"),
+        ("MBG 210", "Bilim ve Etik", "2", "4", "yok"),
+        ("GLB XXX", "Seçmeli Küresel Sorunlar III", "3", "4", "yok"),
+        ("TURK 102", "Türkçe II", "2", "2", "yok"),
     ],
     (5, 3, "Güz"): [
-        ("MBG 301", "Genel Biyokimya I", "8", "MBG 111"),
-        ("GLB XXX", "Seçmeli Küresel Sorunlar IV", "4", "yok"),
-        ("MBG 305", "Moleküler Biyolojide Özel Teknikler ve Uygulamalar", "6", "MBG 208"),
-        ("MBG 309", "İnsan Genetiği", "5", "MBG 209"),
-        ("HIST 201", "Modern Türkiye Tarihi I", "2", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
+        ("MBG 301", "Genel Biyokimya I", "5", "8", "MBG 111"),
+        ("GLB XXX", "Seçmeli Küresel Sorunlar IV", "3", "4", "yok"),
+        ("MBG 305", "Moleküler Biyolojide Özel Teknikler ve Uygulamalar", "4", "6", "MBG 208"),
+        ("MBG 309", "İnsan Genetiği", "3", "5", "MBG 209"),
+        ("HIST 201", "Modern Türkiye Tarihi I", "2", "2", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
     ],
     (6, 3, "Bahar"): [
-        ("MBG 312", "Genel Biyokimya II", "7", "MBG 301"),
-        ("MBG 304", "Biyoinformatik", "6", "yok"),
-        ("MBG 306", "Gen Regülasyonu", "7", "MBG 208"),
-        ("HIST 202", "Modern Türkiye Tarihi II", "2", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("XXX", "Teknik Olmayan Seçmeli", "3", "yok"),
+        ("MBG 312", "Genel Biyokimya II", "4", "7", "MBG 301"),
+        ("MBG 304", "Biyoinformatik", "4", "6", "yok"),
+        ("MBG 306", "Gen Regülasyonu", "4", "7", "MBG 208"),
+        ("HIST 202", "Modern Türkiye Tarihi II", "2", "2", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("NTE XXX", "Teknik Olmayan Seçmeli", "3", "3", "yok"),
     ],
     (7, 4, "Güz"): [
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("OHS 401", "İş Sağlığı ve Güvenliği I", "1", "yok"),
-        ("XXX", "Teknik Olmayan Seçmeli", "3", "yok"),
-        ("MBG 499", "Yaz Stajı", "6", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("OHS 401", "İş Sağlığı ve Güvenliği I", "2", "1", "yok"),
+        ("NTE XXX", "Teknik Olmayan Seçmeli", "3", "3", "yok"),
+        ("MBG 499", "Yaz Stajı", "1", "6", "yok"),
     ],
     (8, 4, "Bahar"): [
-        ("MBG 404", "Moleküler Biyolojide Güncel Konular", "6", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("MBG XXX", "Teknik Seçmeli", "5", "yok"),
-        ("XXX", "Teknik Olmayan Seçmeli", "3", "yok"),
-        ("OHS 402", "İş Sağlığı ve Güvenliği II", "1", "yok"),
+        ("MBG 404", "Moleküler Biyolojide Güncel Konular", "3", "6", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("MBG XXX", "Teknik Seçmeli", "3", "5", "yok"),
+        ("NTE XXX", "Teknik Olmayan Seçmeli", "3", "3", "yok"),
+        ("OHS 402", "İş Sağlığı ve Güvenliği II", "1", "1", "yok"),
     ],
 }
 
 
+def _mufredat_ders_id(kod: str) -> str:
+    return kod.replace(" ", "").replace(".", "").upper()
+
+
 def make_curriculum_chunks() -> list[dict]:
+    """Ders BAŞINA bir mufredat chunk'ı üretir (GPA hesaplayıcı ve dönem listesi
+    her dersi ders_kodu+kredi+akts+donem metadata'sıyla bekler). Aynı dönemde
+    tekrarlanan havuz dersleri (MBG XXX vb.) için id'ye sıra eklenir."""
     chunks: list[dict] = []
     for (donem, yil, sezon), dersler in CURRICULUM.items():
-        lines = [
-            f"- {kod} | {ad} | AKTS: {akts} | Ön şart: {on}"
-            for (kod, ad, akts, on) in dersler
-        ]
-        toplam_akts = sum(int(d[2]) for d in dersler if d[2].isdigit())
-        body = (
-            f"AGÜ {BOLUM_ADI} ({MUFREDAT} müfredatı) — {yil}. yıl {sezon} dönemi "
-            f"({donem}. dönem) dersleri (toplam ~{toplam_akts} AKTS):\n"
-            + "\n".join(lines)
-        )
-        chunks.append({
-            "id": f"mbg_mufredat_donem{donem}",
-            "text": body,
-            "metadata": {
-                "bolum": BOLUM,
-                "tip": "mufredat",
-                "donem": donem,
-                "yil": yil,
-                "sezon": sezon,
-                "mufredat_yili": MUFREDAT,
-                "kaynak": PROGRAM_PDF.name,
-            },
-        })
+        seen: dict[str, int] = {}
+        for (kod, ad, kredi, akts, on) in dersler:
+            did = _mufredat_ders_id(kod)
+            seen[did] = seen.get(did, 0) + 1
+            suffix = f"_{seen[did]}" if seen[did] > 1 else ""
+            text = (
+                f"AGÜ {BOLUM_ADI} ({MUFREDAT} müfredatı) — {yil}. yıl {sezon} dönemi "
+                f"({donem}. dönem): {kod} {ad}. Kredi: {kredi}, AKTS: {akts}, Ön şart: {on}."
+            )
+            chunks.append({
+                "id": f"mbg_mufredat_d{donem}_{did}{suffix}",
+                "text": text,
+                "metadata": {
+                    "bolum": BOLUM,
+                    "tip": "mufredat",
+                    "ders_kodu": kod,
+                    "ders_adi": ad,
+                    "kredi": kredi,
+                    "akts": akts,
+                    "donem": donem,
+                    "yil": yil,
+                    "sezon": sezon,
+                    "on_sart": on,
+                    "mufredat_yili": MUFREDAT,
+                    "kaynak": PROGRAM_PDF.name,
+                },
+            })
     return chunks
 
 

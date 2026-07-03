@@ -38,8 +38,24 @@ RRF_CANDIDATES = 40              # Füzyon sonrası rerank'e giren aday sayısı
 FINAL_K = 8                      # bağlama giren chunk sayısı
 RERANK_ESIK = 0.3                # rerank relevance_score eşiği
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower().strip()
+# LLM sağlayıcı katmanı.
+#   "mistral" (VARSAYILAN, 3 katman):
+#       1) Kısa & context'siz sorular (< ~1K token) → Groq hız şeridi (varsa)
+#       2) Normal/uzun sorular → mistral-small-2506 (ana motor)
+#       3) Small tıkanırsa → mistral-medium-2505 (fallback)
+#   "groq" | "openrouter" : tek sağlayıcı (override)
+#   "auto"               : legacy (Groq → OpenRouter fallback)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mistral").lower().strip()
+
+# Mistral (ana motor + fallback) — OpenAI-uyumlu endpoint, ek paket gerekmez
+MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+MISTRAL_MODEL_PRIMARY = os.getenv("MISTRAL_MODEL", "mistral-small-2506")
+MISTRAL_MODEL_FALLBACK = os.getenv("MISTRAL_MODEL_FALLBACK", "mistral-medium-2505")
+
+# Groq hız şeridi — sadece kısa/context'siz sorular buraya yönlendirilir
 LLM_MODEL_GROQ = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_FAST_LANE_TOKENS = int(os.getenv("GROQ_FAST_LANE_TOKENS", "1000"))
+
 LLM_MODEL_OPENROUTER = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 
 
@@ -79,6 +95,40 @@ BOLUM_ADI_MAP = {
     "biyomuhendislik": "Biyomühendislik",
     "mbg": "Moleküler Biyoloji ve Genetik",
 }
+
+# AGÜ resmi bölüm siteleri — "bilgi yok" durumunda öğrenciyi yönlendirmek için
+BOLUM_LINKS = {
+    "bilgisayar": "https://cmp.agu.edu.tr",
+    "makine": "https://me.agu.edu.tr",
+    "endustri": "https://ie.agu.edu.tr",
+    "elektrik": "https://eee.agu.edu.tr",
+    "insaat": "https://ce.agu.edu.tr",
+    "malzeme": "https://msne.agu.edu.tr",
+    "mimarlik": "https://arch.agu.edu.tr",
+    "isletme": "https://ba.agu.edu.tr",
+    "ekonomi": "https://econ.agu.edu.tr",
+    "siyaset": "https://pols.agu.edu.tr",
+    "psikoloji": "https://psyw4.agu.edu.tr",
+    "biyomuhendislik": "https://beng.agu.edu.tr",
+    "mbg": "https://mbg.agu.edu.tr",
+}
+DESTEK_KANALLARI = (
+    "AGÜ Öğrenci İşleri: https://oidb.agu.edu.tr | "
+    "AGÜ Akademik Takvim: https://www.agu.edu.tr/akademiktakvim"
+)
+
+
+def _bolum_kaynak_satiri(bolum: str | None) -> str:
+    """LLM'in 'bilgi yok' cevabında basacağı kaynak yönlendirme satırı."""
+    link = BOLUM_LINKS.get(bolum, "https://www.agu.edu.tr") if bolum else "https://www.agu.edu.tr"
+    bolum_adi = BOLUM_ADI_MAP.get(bolum, "ilgili bölüm") if bolum else "ilgili bölüm"
+    return (
+        f"- **{bolum_adi} bölüm sitesi:** {link} "
+        f"(sekreterlik e-postası için sitedeki *İletişim* kısmına bak)\n"
+        f"- **AGÜ Öğrenci İşleri:** https://oidb.agu.edu.tr\n"
+        f"- **AGÜ Akademik Takvim:** https://www.agu.edu.tr/akademiktakvim"
+    )
+
 
 BOLUM_KEYWORDS: dict[str, list[str]] = {
     "malzeme": ["msne", "malzeme bilimi", "malzeme müh", "malzeme muh", "nanoteknoloji", "nano teknoloji"],
@@ -404,6 +454,75 @@ def fetch_courses_by_code(code: str, bolum: str) -> list[dict]:
     return hits
 
 
+# ---------- Ön şart zinciri (multi-hop) ----------
+_PREREQ_CODE_RE = re.compile(r"\b([A-Z]{2,5})\s*(\d{2,4})\b")
+_PREREQ_INTENT_TERMS = (
+    "ön şart", "on sart", "önşart", "onsart", "ön koşul", "on kosul", "önkoşul", "onkosul",
+    "prerequisite", "prerequisites", "hangi dersleri geç", "hangi dersleri gec",
+    "zincir", "sırasıyla hangi", "sirasiyla hangi", "önce hangi", "once hangi",
+    "almak için", "almak icin", "geçmiş olmam", "gecmis olmam", "geçmem gerek", "gecmem gerek",
+    "almadan önce", "almadan once", "gereken dersler",
+)
+
+
+def _has_prereq_intent(question: str) -> bool:
+    q = question.lower()
+    return any(t in q for t in _PREREQ_INTENT_TERMS)
+
+
+def _extract_prereq_codes(on_sart: str) -> list[str]:
+    """'MBG 115 & MBG 116' -> ['MBG 115','MBG 116']; 'yok'/boş -> []."""
+    if not on_sart:
+        return []
+    s = str(on_sart).strip()
+    if s.lower() in ("yok", "none", "-", "", "yoktur"):
+        return []
+    return [f"{m.group(1)} {m.group(2)}" for m in _PREREQ_CODE_RE.finditer(s.upper())]
+
+
+def _expand_prereq_chain(start_hits: list[dict], bolum: str, max_depth: int = 6) -> list[dict]:
+    """Ön şart zincirini takip eder: her dersin ön şartındaki dersleri de çeker.
+    Örn. MBG 312 (MBG 301) -> MBG 301 (MBG 111) -> MBG 111 (yok). Döngüyü seen_codes engeller."""
+    seen_codes: set[str] = set()
+    frontier: list[str] = []
+    for h in start_hits:
+        md = h.get("metadata", {}) or {}
+        dk = md.get("ders_kodu")
+        if dk:
+            seen_codes.add(re.sub(r"\s+", "", str(dk)).upper())
+        frontier.extend(_extract_prereq_codes(md.get("on_sart", "")))
+
+    chain: list[dict] = []
+    depth = 0
+    while frontier and depth < max_depth:
+        depth += 1
+        next_frontier: list[str] = []
+        for code in frontier:
+            cnorm = re.sub(r"\s+", "", code).upper()
+            if cnorm in seen_codes:
+                continue
+            seen_codes.add(cnorm)
+            for h in fetch_courses_by_code(code, bolum):
+                md = h.get("metadata", {}) or {}
+                if md.get("ders_kodu"):
+                    chain.append(h)
+                    next_frontier.extend(_extract_prereq_codes(md.get("on_sart", "")))
+        frontier = next_frontier
+    return chain
+
+
+def _fetch_course_with_prereqs(code: str, bolum: str, question: str) -> list[dict]:
+    """Ders chunk'ları + (soru ön şart/zincir ile ilgiliyse) ön şart zincirindeki dersler."""
+    hits = fetch_courses_by_code(code, bolum)
+    if hits and _has_prereq_intent(question):
+        seen = {h["text"] for h in hits}
+        for h in _expand_prereq_chain(hits, bolum):
+            if h["text"] not in seen:
+                hits.append(h)
+                seen.add(h["text"])
+    return hits
+
+
 def fetch_semester_courses(mufredat_yili: str, donems: list[int], bolum: str) -> list[dict]:
     donemset = set(donems)
     hits = []
@@ -503,14 +622,22 @@ SYSTEM_PROMPT = """Sen Abdullah Gül Üniversitesi {bolum_adi} bölümü için b
 
 KURALLAR:
 1. Sadece sana verilen BAĞLAM içindeki bilgilere dayanarak cevap ver.
-2. Bağlamda olmayan bir şey sorulursa ASLA UYDURMA; bilgi olmadığını kibarca söyle ve ilgili bölüm web sayfasına/yönergeye yönlendir. Kısmi bilgi varsa önce onu ver, sonra eksik kısmı belirt.
+2. Bağlamda olmayan bir şey sorulursa ASLA UYDURMA. Önce TEK cümleyle bilgin olmadığını söyle, sonra kaynakları HER BİRİ AYRI SATIRDA madde (`- `) olarak ver. Şu biçimi kullan:
+
+Bu bilgi elimdeki dokümanlarda yok. Şu kaynaklara bakabilirsin:
+
+{bolum_kaynak}
+
+Kısmi bilgi varsa önce sahip olduğun bilgiyi ver, sonra bu listeyi ekle. Linkleri ASLA tek satırda `|` ile yan yana dizme.
 3. Cevabı verirken hangi kaynağı kullandığını belirt (örn: "2023 müfredatına göre...", "Staj Yönergesi MADDE 10'a göre...").
 4. Ders kodu, AKTS, dönem gibi sayısal bilgileri aynen aktar.
 5. CEVAP UZUNLUĞU: Soru kapsamlıysa (Erasmus şartları, staj süreci, yatay geçiş) bağlamdaki TÜM ilgili maddeleri/şartları/detayları cevabın gövdesinde tek tek say (sayısal kriterler, MADDE no, ders kodları, e-posta dahil). Tek bir gerçek sorulduğunda (ör. "BA499 kaç AKTS?") tek satır yeterli.
+5c. DÜZEN: Cevabı okunaklı biçimlendir. 2-3 cümleden uzun cevaplarda kısa alt başlıklar ve madde işaretleri (`- `) kullan; HER maddeyi ve HER linki AYRI satıra yaz; devasa tek paragraf yazma. Linkleri/kaynakları asla yan yana `|` ile dizme — alt alta madde yap.
 6. Makine Mühendisliği: 2022-2025 girişliler "2025", 2021 ve öncesi "2021" müfredatına tabidir.
 7. Endüstri Mühendisliği: 2016-2020 "2016", 2021-2024 "2021", 2025+ "2025" müfredatına tabidir.
 8. Bilgisayar Mühendisliği: 2016-2020 "2016", 2021-2022 "2021", 2023-2024 "2023", 2025+ "2025" müfredatına tabidir.
 9. Bir dersin ön şartı sorulursa BAĞLAM'daki "Ön şart:" alanına bak. "yok" ise "Bu dersin ön şartı yoktur" de; aksi halde aynen aktar. Bu bilgi her ders chunk'ında vardır — "bilgi yok" deme.
+9a. ÖN ŞART ZİNCİRİ: Zincirleme/sırasıyla ön şart sorulduğunda HER dersin ön şartını YALNIZCA o dersin BAĞLAM'daki kendi kaydından al. Bir dersin kaydı bağlamda yoksa ön şartını TAHMİN ETME; "X dersinin ön şart bilgisi dokümanlarda yok" de. Aynı kod ailesinden (ör. MBG) olması iki dersi ön şart yapmaz — sadece "Ön şart:" alanında yazan geçerlidir.
 10. Elektrik-Elektronik: 2019-2020 "2019", 2021-2024 "2021", 2025+ "2025" Capsule müfredatına tabidir. 3-4. sınıfta "Seçmeli Kapsüller" havuzundan ders seçilir.
 11. İnşaat: 2016-2020 "2016", 2021-2024 "2021", 2025+ "2025" müfredatına tabidir.
 12. Malzeme Bilimi ve Nanoteknoloji (MSNE): tüm girişler "2025" (tek aktif müfredat).
@@ -526,33 +653,31 @@ def _messages_for(soru: str, context_texts: list[str], bolum: str | None) -> lis
     context = "\n---\n".join(context_texts) if context_texts else "Bilgi havuzunda ilgili kaynak bulunamadı."
     bolum_adi = BOLUM_ADI_MAP.get(bolum, "AGÜ") if bolum else "AGÜ"
     return [
-        {"role": "system", "content": SYSTEM_PROMPT.format(bolum_adi=bolum_adi)},
+        {"role": "system", "content": SYSTEM_PROMPT.format(bolum_adi=bolum_adi, bolum_kaynak=_bolum_kaynak_satiri(bolum))},
         {"role": "user", "content": f"BAĞLAM:\n{context}\n\nSORU: {soru}"},
     ]
 
 
+@lru_cache(maxsize=1)
 def _groq_client():
     from groq import Groq
 
     return Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
+@lru_cache(maxsize=1)
 def _openrouter_client():
     from openai import OpenAI
 
     return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))
 
 
-def _complete_groq(messages, max_tokens, temperature):
-    resp = _groq_client().chat.completions.create(
-        model=LLM_MODEL_GROQ, max_tokens=max_tokens, temperature=temperature, messages=messages)
-    return resp.choices[0].message.content or ""
+@lru_cache(maxsize=1)
+def _mistral_client():
+    """Mistral — OpenAI-uyumlu endpoint (ek paket gerekmez)."""
+    from openai import OpenAI
 
-
-def _complete_openrouter(messages, max_tokens, temperature):
-    resp = _openrouter_client().chat.completions.create(
-        model=LLM_MODEL_OPENROUTER, max_tokens=max_tokens, temperature=temperature, messages=messages)
-    return resp.choices[0].message.content or ""
+    return OpenAI(base_url=MISTRAL_BASE_URL, api_key=os.getenv("MISTRAL_API_KEY"))
 
 
 def _stream_provider(client, model, messages, max_tokens, temperature):
@@ -564,36 +689,78 @@ def _stream_provider(client, model, messages, max_tokens, temperature):
             yield delta
 
 
-def _llm_complete(messages: list[dict], max_tokens: int = 1800, temperature: float = 0.2) -> str:
-    """LLM_PROVIDER: 'groq' | 'openrouter' | 'auto' (Groq dene, hata olursa OpenRouter'a düş)."""
+# ---------------------------------------------------------------------------
+# Sağlayıcı zinciri: (client, model) sırayla denenir. Bir katman patlar veya boş
+# dönerse sonrakine geçilir. Zincir LLM_PROVIDER + soru uzunluğuna göre kurulur.
+# ---------------------------------------------------------------------------
+def _estimate_tokens(messages: list[dict]) -> int:
+    """Kaba tahmin: ~4 karakter/token (Türkçe için makul)."""
+    return sum(len(m.get("content", "") or "") for m in messages) // 4
+
+
+def _use_groq_fast_lane(messages: list[dict]) -> bool:
+    """Kısa & context'siz sorular Groq hız şeridine uygun mu?
+    (GROQ_API_KEY tanımlı VE tahmini prompt < ~1K token)."""
+    return bool(os.getenv("GROQ_API_KEY")) and _estimate_tokens(messages) < GROQ_FAST_LANE_TOKENS
+
+
+def _build_chain(messages: list[dict]) -> list[tuple]:
+    """Denenecek (client, model) katmanlarını sırayla döndürür."""
     if LLM_PROVIDER == "openrouter":
-        return _complete_openrouter(messages, max_tokens, temperature)
-    if LLM_PROVIDER == "auto":
+        return [(_openrouter_client(), LLM_MODEL_OPENROUTER)]
+    if LLM_PROVIDER == "groq":
+        return [(_groq_client(), LLM_MODEL_GROQ)]
+    if LLM_PROVIDER == "auto":  # legacy: Groq → OpenRouter
+        return [(_groq_client(), LLM_MODEL_GROQ), (_openrouter_client(), LLM_MODEL_OPENROUTER)]
+
+    # Varsayılan: Mistral 3 katman
+    chain: list[tuple] = []
+    if _use_groq_fast_lane(messages):
+        chain.append((_groq_client(), LLM_MODEL_GROQ))            # 1) hız şeridi
+    chain.append((_mistral_client(), MISTRAL_MODEL_PRIMARY))       # 2) ana motor (small)
+    chain.append((_mistral_client(), MISTRAL_MODEL_FALLBACK))      # 3) fallback (medium)
+    return chain
+
+
+def _complete_chain(chain, messages, max_tokens, temperature) -> str:
+    last_exc = None
+    for client, model in chain:
         try:
-            return _complete_groq(messages, max_tokens, temperature)
-        except Exception:
-            return _complete_openrouter(messages, max_tokens, temperature)
-    return _complete_groq(messages, max_tokens, temperature)
+            resp = client.chat.completions.create(
+                model=model, max_tokens=max_tokens, temperature=temperature, messages=messages)
+            out = resp.choices[0].message.content or ""
+            if out:
+                return out
+        except Exception as e:  # rate-limit / hata → sonraki katman
+            last_exc = e
+    if last_exc:
+        raise last_exc
+    return ""
+
+
+def _stream_chain(chain, messages, max_tokens, temperature):
+    last_exc = None
+    for client, model in chain:
+        try:
+            gen = _stream_provider(client, model, messages, max_tokens, temperature)
+            first = next(gen, None)
+            if first is None:
+                continue  # boş yanıt → sonraki katman
+            yield first
+            yield from gen
+            return
+        except Exception as e:  # ilk token gelmeden hata → sonraki katman
+            last_exc = e
+    if last_exc:
+        raise last_exc
+
+
+def _llm_complete(messages: list[dict], max_tokens: int = 1800, temperature: float = 0.2) -> str:
+    return _complete_chain(_build_chain(messages), messages, max_tokens, temperature)
 
 
 def _llm_stream(messages: list[dict], max_tokens: int = 1800, temperature: float = 0.2):
-    if LLM_PROVIDER == "openrouter":
-        yield from _stream_provider(_openrouter_client(), LLM_MODEL_OPENROUTER, messages, max_tokens, temperature)
-        return
-    if LLM_PROVIDER == "auto":
-        # Groq'u dene; ilk token gelmeden hata/boş olursa OpenRouter'a düş.
-        try:
-            gen = _stream_provider(_groq_client(), LLM_MODEL_GROQ, messages, max_tokens, temperature)
-            first = next(gen, None)
-            if first is None:
-                yield from _stream_provider(_openrouter_client(), LLM_MODEL_OPENROUTER, messages, max_tokens, temperature)
-                return
-            yield first
-            yield from gen
-        except Exception:
-            yield from _stream_provider(_openrouter_client(), LLM_MODEL_OPENROUTER, messages, max_tokens, temperature)
-        return
-    yield from _stream_provider(_groq_client(), LLM_MODEL_GROQ, messages, max_tokens, temperature)
+    yield from _stream_chain(_build_chain(messages), messages, max_tokens, temperature)
 
 
 # --------------------------------------------------------------------------- #
@@ -617,14 +784,15 @@ def respond(soru: str, bolum=_AUTO, k: int | None = None) -> dict:
     code_match = COURSE_CODE_RE.search(soru.upper())
     if bolum and code_match:
         code = f"{code_match.group(1)} {code_match.group(2)}"
-        code_hits = fetch_courses_by_code(code, bolum)
+        code_hits = _fetch_course_with_prereqs(code, bolum, soru)
         if code_hits:
             ctx = [h["text"] for h in code_hits]
             extra, _ = retrieve(soru, bolum=bolum)
             for t in extra:
                 if t not in ctx:
                     ctx.append(t)
-            ctx = ctx[:12]
+            # Ön şart zinciri sorularında zincir uzun olabilir → limiti yükselt
+            ctx = ctx[:16 if _has_prereq_intent(soru) else 12]
             return {"mode": "llm", "text": None, "token_iter": _llm_stream(_messages_for(soru, ctx, bolum)),
                     "bolum": bolum, "n": len(ctx)}
 
