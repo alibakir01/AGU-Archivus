@@ -299,17 +299,27 @@ def _rrf_fuse(vector_hits: list[dict], bm25_hits: list[dict], k: int, c: int = R
 _AUTO = object()  # retrieve() için "bölümü otomatik tespit et" işareti
 
 
-def retrieve(soru: str, bolum=_AUTO, k: int | None = None) -> tuple[list[str], str | None]:
+def embed_question(soru: str) -> list[float]:
+    """Sorunun (alias-genişletilmiş) Voyage query embedding'i.
+    Hem retrieval hem semantik cache aynı vektörü kullanır (çift çağrı yok)."""
+    expanded = _expand_query_with_aliases(soru)
+    return _voyage().embed([expanded], model=EMBED_MODEL, input_type="query").embeddings[0]
+
+
+def retrieve(soru: str, bolum=_AUTO, k: int | None = None,
+             sorgu_vek: list[float] | None = None) -> tuple[list[str], str | None]:
     """Bağlam metinlerini ve (etkin) bölümü döndür.
     bolum=_AUTO → detect_bolum; bolum=None → filtresiz; bolum='x' → o bölümle filtrele.
-    k → bağlama giren chunk sayısı (None ise FINAL_K)."""
+    k → bağlama giren chunk sayısı (None ise FINAL_K).
+    sorgu_vek verilirse tekrar embed edilmez (cache ile paylaşım)."""
     final_k = k or FINAL_K
     if bolum is _AUTO:
         bolum = detect_bolum(soru)
     expanded = _expand_query_with_aliases(soru)
 
     # 1) Dense
-    sorgu_vek = _voyage().embed([expanded], model=EMBED_MODEL, input_type="query").embeddings[0]
+    if sorgu_vek is None:
+        sorgu_vek = _voyage().embed([expanded], model=EMBED_MODEL, input_type="query").embeddings[0]
     flt = {"bolum": {"$in": [bolum, "ortak"]}} if bolum else None
     sonuc = _pc_index().query(vector=sorgu_vek, top_k=VECTOR_K, include_metadata=True, filter=flt)
     vector_hits = [
@@ -765,6 +775,46 @@ def _llm_stream(messages: list[dict], max_tokens: int = 1800, temperature: float
 
 
 # --------------------------------------------------------------------------- #
+# Semantik cache köprüsü — hit ise hazır cevabı stream'ler, miss ise üretip yazar
+# --------------------------------------------------------------------------- #
+from src import semantic_cache  # noqa: E402
+
+
+def _iter_text(text: str):
+    """Hazır (cache) metni tek parça yield et — st.write_stream anında basar."""
+    yield text
+
+
+def _cache_on_finish(stream, bolum: str, q_emb, soru: str):
+    """LLM stream'i aynen geçirir; tamamlanınca cevabı cache'e yazar."""
+    parts: list[str] = []
+    for tok in stream:
+        parts.append(tok)
+        yield tok
+    full = "".join(parts).strip()
+    if full and q_emb is not None:
+        try:
+            semantic_cache.add(bolum, q_emb, soru, full)
+        except Exception:
+            pass
+
+
+def _sem_lookup(soru: str, bolum: str | None):
+    """(q_emb, hazır_cevap_response|None) döndürür. Cache kapalıysa (None, None)."""
+    if not (bolum and semantic_cache.enabled()):
+        return None, None
+    try:
+        q_emb = embed_question(soru)
+    except Exception:
+        return None, None
+    hit = semantic_cache.lookup(bolum, q_emb)
+    if hit is not None:
+        return q_emb, {"mode": "llm", "text": None, "token_iter": _iter_text(hit),
+                       "bolum": bolum, "n": 0, "cached": True}
+    return q_emb, None
+
+
+# --------------------------------------------------------------------------- #
 # Genel API — yapılandırılmış sorgu yönlendirmesi (src/rag.py.answer_stream mantığı)
 # --------------------------------------------------------------------------- #
 def respond(soru: str, bolum=_AUTO, k: int | None = None) -> dict:
@@ -787,14 +837,19 @@ def respond(soru: str, bolum=_AUTO, k: int | None = None) -> dict:
         code = f"{code_match.group(1)} {code_match.group(2)}"
         code_hits = _fetch_course_with_prereqs(code, bolum, soru)
         if code_hits:
+            # Semantik cache: benzer soru varsa retrieval+LLM'e hiç gitme
+            q_emb, cached = _sem_lookup(soru, bolum)
+            if cached:
+                return cached
             ctx = [h["text"] for h in code_hits]
-            extra, _ = retrieve(soru, bolum=bolum)
+            extra, _ = retrieve(soru, bolum=bolum, sorgu_vek=q_emb)
             for t in extra:
                 if t not in ctx:
                     ctx.append(t)
             # Ön şart zinciri sorularında zincir uzun olabilir → limiti yükselt
             ctx = ctx[:16 if _has_prereq_intent(soru) else 12]
-            return {"mode": "llm", "text": None, "token_iter": _llm_stream(_messages_for(soru, ctx, bolum)),
+            stream = _cache_on_finish(_llm_stream(_messages_for(soru, ctx, bolum)), bolum, q_emb, soru)
+            return {"mode": "llm", "text": None, "token_iter": stream,
                     "bolum": bolum, "n": len(ctx)}
 
     # 2) Seçmeli ders havuzu listesi → deterministik
@@ -818,9 +873,13 @@ def respond(soru: str, bolum=_AUTO, k: int | None = None) -> dict:
             return {"mode": "list", "text": text, "token_iter": None, "bolum": bolum, "n": len(mufredat_hits)}
         # yapılandırılmış mufredat yoksa (MBG, psikoloji) genel RAG'a düş
 
-    # 4) Genel RAG → LLM stream
-    ctx, _ = retrieve(soru, bolum=bolum, k=k)
-    return {"mode": "llm", "text": None, "token_iter": _llm_stream(_messages_for(soru, ctx, bolum)),
+    # 4) Genel RAG → LLM stream (semantik cache'li)
+    q_emb, cached = _sem_lookup(soru, bolum)
+    if cached:
+        return cached
+    ctx, _ = retrieve(soru, bolum=bolum, k=k, sorgu_vek=q_emb)
+    stream = _cache_on_finish(_llm_stream(_messages_for(soru, ctx, bolum)), bolum, q_emb, soru)
+    return {"mode": "llm", "text": None, "token_iter": stream,
             "bolum": bolum, "n": len(ctx)}
 
 
