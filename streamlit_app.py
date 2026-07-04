@@ -75,14 +75,12 @@ def _render_rating(idx: int, m: dict) -> None:
         st.caption(f"{'👍' if m['rating'] == 'up' else '👎'} Geri bildirimin için teşekkürler.")
         return
     st.caption("Bu cevap yardımcı oldu mu?")
-    cols = st.columns([1.4, 1.4, 5])
-    if cols[0].button("👍 Faydalı", key=f"up-{idx}", help="Bu cevap işime yaradı",
-                      use_container_width=True):
+    cols = st.columns([1, 1, 8])
+    if cols[0].button("👍", key=f"up-{idx}", help="Bu cevap işime yaradı"):
         m["rating"] = "up"
         _log_feedback(m, "up")
         st.rerun()
-    if cols[1].button("👎 Yetersiz", key=f"down-{idx}", help="Bu cevap yetersiz / yanlış",
-                      use_container_width=True):
+    if cols[1].button("👎", key=f"down-{idx}", help="Bu cevap yetersiz / yanlış"):
         st.session_state[f"_down_{idx}"] = True
     if st.session_state.get(f"_down_{idx}"):
         comment = st.text_input(
