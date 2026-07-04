@@ -471,6 +471,22 @@
         /* Butonlar tam genişlik (öneri çipleri, GPA butonları) */
         .stButton button { width: 100% !important; }
 
+        /* İSTİSNA: chat mesajı içindeki feedback 👍/👎 butonları mobilde de
+           ALT ALTA değil YAN YANA kalsın (yukarıdaki genel dikey-yığmayı ez). */
+        [data-testid="stChatMessage"] [data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 0.4rem !important;
+        }
+        [data-testid="stChatMessage"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
+            width: auto !important;
+            flex: 0 0 auto !important;
+            min-width: 0 !important;
+        }
+        [data-testid="stChatMessage"] [data-testid="stHorizontalBlock"] .stButton button {
+            width: 30px !important;
+        }
+
         /* Başlık/logo ve karşılama metnini küçült */
         .sidebar-logo h2 { font-size: 1.1rem !important; }
         .welcome h3 { font-size: 1.05rem !important; }

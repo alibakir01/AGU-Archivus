@@ -19,7 +19,7 @@ import streamlit as st
 _KEYS = ["VOYAGE_AI_KEY", "PINECONE_API_KEY", "MISTRAL_API_KEY", "MISTRAL_MODEL",
          "MISTRAL_MODEL_FALLBACK", "GROQ_API_KEY", "GROQ_FAST_LANE_TOKENS",
          "OPENROUTER_API_KEY", "LLM_PROVIDER", "OPENROUTER_MODEL",
-         "RATE_LIMIT_PER_MIN"]
+         "RATE_LIMIT_PER_MIN", "MAINTENANCE_MODE", "MAINTENANCE_MESSAGE"]
 try:
     for _k in _KEYS:
         if _k in st.secrets and not os.getenv(_k):
@@ -114,6 +114,23 @@ def _client_id() -> str:
 # --------------------------------------------------------------------------- #
 st.set_page_config(page_title="AGÜ Öğrenci Asistanı", page_icon="🎓",
                    layout="wide", initial_sidebar_state="expanded")
+
+# --------------------------------------------------------------------------- #
+# Bakım modu / kill switch — Secrets'ta MAINTENANCE_MODE="1" yapıp Reboot deyince
+# kullanıcılar hata/stack trace yerine kibar bir "bakımdayız" ekranı görür.
+# Kapatmak için MAINTENANCE_MODE="0" (ya da sil) + Reboot. En erken noktada çalışır.
+# --------------------------------------------------------------------------- #
+if os.getenv("MAINTENANCE_MODE", "").strip().lower() in ("1", "true", "on", "yes", "evet"):
+    _msg = os.getenv("MAINTENANCE_MESSAGE") or "Bakımdayız, birazdan döneriz 🙂"
+    st.markdown(
+        '<div style="text-align:center;max-width:520px;margin:12vh auto 0;padding:2rem 1.5rem;">'
+        '<div style="font-size:3.4rem;line-height:1;">🛠️</div>'
+        f'<h2 style="margin:1rem 0 .4rem;color:#B21E55;">{_msg}</h2>'
+        '<p style="opacity:.7;font-size:1rem;">AGU Archivus şu an kısa bir bakımda. '
+        'Lütfen birazdan tekrar dene.</p></div>',
+        unsafe_allow_html=True,
+    )
+    st.stop()
 
 # Tema: aydınlık (VARSAYILAN) veya koyu. Sidebar'daki toggle session_state'i günceller.
 theme = st.session_state.get("theme", "light")
