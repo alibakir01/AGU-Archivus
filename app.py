@@ -1370,7 +1370,7 @@ with gpa_tab:
         extra_key = f"gpa_extras_{bolum_id}"
         if extra_key not in st.session_state:
             st.session_state[extra_key] = pd.DataFrame(
-                columns=["Ders Kodu", "Ders Adı", "Kredi", "AKTS", "Not", "Eski Not", "Tip", "P/F"]
+                columns=["Ders Kodu", "Ders Adı", "Kredi", "AKTS", "Eski Not", "Not", "Tip", "P/F"]
             )
 
         with st.expander("➕ Ders ekle (tekrar/yükseltme, yatay geçiş, yaz okulu...)"):
@@ -1409,8 +1409,8 @@ with gpa_tab:
                                 "Ders Adı": c["ders_adi"],
                                 "Kredi": c["kredi"],
                                 "AKTS": c["akts"],
-                                "Not": "—",
                                 "Eski Not": "—",
+                                "Not": "—",
                                 "Tip": "Yatay geçiş",
                                 "P/F": gpa.is_default_pf(c["ders_kodu"], c["ders_adi"]),
                             }])
@@ -1431,10 +1431,10 @@ with gpa_tab:
                     "Ders Adı": st.column_config.TextColumn(width="medium"),
                     "Kredi": st.column_config.NumberColumn(min_value=0, max_value=15, default=3, width="small"),
                     "AKTS": st.column_config.NumberColumn(min_value=0, max_value=30, default=5, width="small"),
+                    "Eski Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small",
+                                                                 help="Tekrar/yükseltmede ESKİ notun. Sadece Tip=Tekrar/Yükseltme'de kullanılır."),
                     "Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small",
                                                             help="Bu dönem aldığın YENİ not."),
-                    "Eski Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small",
-                                                                 help="Tekrar/yükseltmede ESKİ notun. Değilse '—' bırak."),
                     "Tip": st.column_config.SelectboxColumn(options=gpa.EXTRA_TYPES, width="medium"),
                     "P/F": st.column_config.CheckboxColumn(width="small"),
                 },
@@ -1472,8 +1472,10 @@ with gpa_tab:
                 grade = str(r.get("Not", "—") or "—").strip()
                 if not kod or grade in ("", "—", "nan"):
                     continue
+                tip = str(r.get("Tip", "") or "").strip()
                 eski = str(r.get("Eski Not", "—") or "—").strip()
-                eski = eski if eski not in ("", "—", "nan") else ""
+                # Eski Not YALNIZCA Tip=Tekrar/Yükseltme seçilince dikkate alınır
+                eski = eski if (tip == "Tekrar/Yükseltme" and eski not in ("", "—", "nan")) else ""
                 entries.append({
                     "ders_kodu": kod,
                     "kredi": int(r["Kredi"] or 0) if pd.notna(r.get("Kredi")) else 0,
