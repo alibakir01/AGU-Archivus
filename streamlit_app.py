@@ -267,7 +267,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-chat_tab, gpa_tab = st.tabs(["💬 Asistan", ":material/school: GPA Hesaplayıcı"])
+chat_tab, gpa_tab = st.tabs([":material/rate_review: Asistan", ":material/school: GPA Hesaplayıcı"])
 
 # ============================ ASİSTAN ============================
 with chat_tab:
@@ -277,7 +277,15 @@ with chat_tab:
     # Boş sohbette karşılama + öneri çipleri (bekleyen soru yokken)
     if not st.session_state["messages"] and "pending_q" not in st.session_state:
         st.markdown(
-            '<div class="welcome"><h3>💬 Sormak istediğin bir şey var mı?</h3>'
+            '<div class="welcome"><h3>'
+            '<svg viewBox="0 0 24 24" width="1.05em" height="1.05em" fill="none" stroke="currentColor" '
+            'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
+            'style="vertical-align:-0.18em;margin-right:7px;">'
+            '<path d="M2 5.5A2.5 2.5 0 0 1 4.5 3H12a2.5 2.5 0 0 1 2.5 2.5v5A2.5 2.5 0 0 1 12 13H8l-3 3v-3H4.5A2.5 2.5 0 0 1 2 10.5z"/>'
+            '<path d="M5 6.6h6"/><path d="M5 9.2h4"/>'
+            '<path d="M20 3.2a1.7 1.7 0 0 1 2.4 2.4l-7.6 7.6-3.2 .8 .8-3.2z"/>'
+            '<path d="M18.7 4.5l2.4 2.4"/>'
+            '</svg>Sormak istediğin bir şey var mı?</h3>'
             '<p>Aşağıdaki örneklerden birini seç ya da kendi sorunu yaz.</p></div>',
             unsafe_allow_html=True,
         )
