@@ -144,7 +144,7 @@ def embed_batch(metinler: list[str], deneme: int = 3) -> list[list[float]]:
 # --------------------------------------------------------------------------- #
 # Ana akış
 # --------------------------------------------------------------------------- #
-def verileri_hazirla_ve_yukle():
+def verileri_hazirla_ve_yukle(temizle: bool = False):
     if not os.getenv("VOYAGE_AI_KEY"):
         raise SystemExit("[HATA] VOYAGE_AI_KEY .env'de tanımlı değil.")
     if not os.getenv("PINECONE_API_KEY"):
@@ -154,6 +154,17 @@ def verileri_hazirla_ve_yukle():
     print(f"[+] {len(chunks)} chunk yüklendi: {PROCESSED_DIR}")
 
     index = index_hazirla()
+
+    # --temizle: önce indexteki TÜM vektörleri sil (silinen/eski chunk'lar kalmasın).
+    # Böylece Pinecone birebir güncel jsonl'lerle eşleşir; hayalet kayıt olmaz.
+    if temizle:
+        print("[!] --temizle: mevcut tüm vektörler siliniyor (tam yeniden kurulum)...")
+        try:
+            index.delete(delete_all=True)
+            time.sleep(3)
+            print("    silindi.")
+        except Exception as e:
+            print(f"    [uyarı] silme atlandı ({e}) — index zaten boş olabilir.")
 
     pinecone_verisi: list[dict] = []
     toplam = len(chunks)
@@ -185,4 +196,6 @@ def verileri_hazirla_ve_yukle():
 
 
 if __name__ == "__main__":
-    verileri_hazirla_ve_yukle()
+    import sys
+    _temizle = "--temizle" in sys.argv or "--clean" in sys.argv
+    verileri_hazirla_ve_yukle(temizle=_temizle)

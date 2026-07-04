@@ -236,6 +236,14 @@ _LIGHT_CSS = """
   .stButton button[kind="secondary"]:hover {
       border-color: rgba(178,30,85,0.45) !important; background: #FDF6F8 !important; }
 
+  /* Feedback butonları (👍/👎 — chat mesajı içinde) beyaz kart üstünde beyaz
+     kalıp görünmüyordu; belirgin gri zemin + koyu kenarlık ver */
+  [data-testid="stChatMessage"] .stButton button {
+      background: #F1F3F6 !important; border: 1.5px solid #B9BEC9 !important;
+      color: #1c2330 !important; box-shadow: 0 1px 2px rgba(16,24,40,0.06) !important; }
+  [data-testid="stChatMessage"] .stButton button:hover {
+      background: #FBEFF3 !important; border-color: #B21E55 !important; color: #7B1E3A !important; }
+
   /* Bölüm SVG ikonu beyaz stroke → aydınlıkta görünmez; info-card'da bordo yap
      (hero koyu bordo zeminde kaldığı için orada beyaz kalır) */
   .info-card .bolum-icon svg { stroke: #B21E55 !important; }

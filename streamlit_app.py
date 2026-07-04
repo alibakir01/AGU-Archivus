@@ -44,13 +44,17 @@ def _feedback_config() -> tuple[str | None, str | None]:
     creds_json = None
     sheet_id = os.getenv("FEEDBACK_SHEET_ID")
     try:
+        # Yöntem A: [gcp_service_account] TOML tablosu (alan alan)
         if "gcp_service_account" in st.secrets:
             creds_json = json.dumps(dict(st.secrets["gcp_service_account"]))
+        # Yöntem B (kolay): JSON dosyasının tüm içeriği tek alanda
+        elif "FEEDBACK_GCP_CREDS" in st.secrets:
+            creds_json = str(st.secrets["FEEDBACK_GCP_CREDS"])
         if not sheet_id and "FEEDBACK_SHEET_ID" in st.secrets:
             sheet_id = str(st.secrets["FEEDBACK_SHEET_ID"])
     except Exception:
         pass
-    if not creds_json:  # alternatif: tek satır JSON string
+    if not creds_json:  # yerel/env alternatifi
         creds_json = os.getenv("FEEDBACK_GCP_CREDS")
     return creds_json, sheet_id
 
@@ -70,12 +74,15 @@ def _render_rating(idx: int, m: dict) -> None:
     if m.get("rating"):
         st.caption(f"{'👍' if m['rating'] == 'up' else '👎'} Geri bildirimin için teşekkürler.")
         return
-    cols = st.columns([1, 1, 8])
-    if cols[0].button("👍", key=f"up-{idx}", help="Bu cevap işime yaradı"):
+    st.caption("Bu cevap yardımcı oldu mu?")
+    cols = st.columns([1.4, 1.4, 5])
+    if cols[0].button("👍 Faydalı", key=f"up-{idx}", help="Bu cevap işime yaradı",
+                      use_container_width=True):
         m["rating"] = "up"
         _log_feedback(m, "up")
         st.rerun()
-    if cols[1].button("👎", key=f"down-{idx}", help="Bu cevap yetersiz / yanlış"):
+    if cols[1].button("👎 Yetersiz", key=f"down-{idx}", help="Bu cevap yetersiz / yanlış",
+                      use_container_width=True):
         st.session_state[f"_down_{idx}"] = True
     if st.session_state.get(f"_down_{idx}"):
         comment = st.text_input(
