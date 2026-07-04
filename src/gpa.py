@@ -13,12 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PROCESSED_DIR = ROOT / "data" / "processed"
 
 # 11-li harf sistemi (4.0 üzerinden)
+# AGÜ resmi katsayılar (Lisans Eğitim-Öğretim ve Sınav Yönetmeliği not tablosu):
+# A- = 3.67, B+ = 3.33 ... (yuvarlanmış 3.7/3.3 DEĞİL — ⅓'lük kesirler)
 GRADE_PTS: dict[str, float] = {
-    "A":  4.0, "A-": 3.7,
-    "B+": 3.3, "B":  3.0, "B-": 2.7,
-    "C+": 2.3, "C":  2.0, "C-": 1.7,
-    "D+": 1.3, "D":  1.0,
-    "F":  0.0,
+    "A":  4.00, "A-": 3.67,
+    "B+": 3.33, "B":  3.00, "B-": 2.67,
+    "C+": 2.33, "C":  2.00, "C-": 1.67,
+    "D+": 1.33, "D":  1.00,
+    "F":  0.00,
 }
 GRADE_OPTIONS: list[str] = [
     "—", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F"
@@ -40,7 +42,7 @@ DEFAULT_PF_PATTERNS = [
     r"^CP\s*\d+",                  # CP 100 Kariyer Planlama
 ]
 
-EXTRA_TYPES = ["None", "Yatay geçiş", "Eski müfredat (intibak)", "Yaz okulu", "Diğer"]
+EXTRA_TYPES = ["None", "Tekrar/Yükseltme", "Yatay geçiş", "Eski müfredat (intibak)", "Yaz okulu", "Diğer"]
 
 
 def _to_int(v, default: int = 0) -> int:
@@ -262,13 +264,17 @@ def courses_for_year(bolum: str, mufredat_yili: str, sinif: int, donem: int = 0)
 
 
 def compute_combined(prev_cgpa: float, prev_credits: int, entries: list[dict]) -> dict:
-    """Bu dönemin GPA'sını ve önceki CGPA + kredi ile birleşik yeni CGPA'yı döndürür.
+    """Bu dönemin ortalamasını ve önceki CGPA ile birleşik yeni CGPA'yı döndürür.
 
-    Formül: new_cgpa = (prev_cgpa * prev_credits + dönem_pts) / (prev_credits + dönem_credits)
+    AGÜ MADDE 30: GNO = Σ(AKTS × katsayı) / Σ(AKTS) — ağırlık KREDİ değil AKTS'dir.
+    Bu yüzden prev_credits parametresi = ÖNCEKİ TOPLAM AKTS.
 
-    entries: [{ders_kodu, kredi, akts, not, pf}]
-    Aynı ders_kodu birden fazla geçerse SON girdi kullanılır.
-    pf=True olanlar GPA hesabına KATILMAZ ama AKTS/sayım'a girer.
+    entries: [{ders_kodu, kredi, akts, not, pf, eski_not?}]
+    - Aynı ders_kodu birden fazla geçerse SON girdi kullanılır.
+    - pf=True olanlar ortalama hesabına KATILMAZ ama sayıma/AKTS'ye girer.
+    - eski_not GEÇERLİ bir harf notu ise ders TEKRAR/YÜKSELTME sayılır: GNO'da
+      ders TEK kez yer alır; eski notun katkısı çıkar, yeni not girer, AKTS
+      denominatöre TEKRAR eklenmez (AGÜ: son alınan not geçerli).
     """
     by_code: dict[str, dict] = {}
     for e in entries:
@@ -276,9 +282,14 @@ def compute_combined(prev_cgpa: float, prev_credits: int, entries: list[dict]) -
         if kod:
             by_code[kod] = e
 
-    sem_pts_sum = 0.0
-    sem_cred_sum = 0
-    sem_akts = 0
+    # Dönem ortalaması — bu dönem alınan HER ders (yeni + tekrar), yeni notuyla, AKTS ağırlıklı
+    term_pts = 0.0
+    term_w = 0            # dönem ortalaması denominatörü (AKTS)
+    # CGPA katkısı
+    cum_pts_add = 0.0     # yeni derslerin puanı
+    cum_w_add = 0         # yeni derslerin AKTS'si (kümülatif denominatöre eklenir)
+    retake_delta = 0.0    # tekrar derslerinin (yeni-eski) puan düzeltmesi
+    sem_akts_earned = 0   # bu dönem YENİ kazanılan AKTS (geçilen, tekrar olmayan)
     sem_passed = 0
     sem_failed = 0
 
@@ -286,25 +297,34 @@ def compute_combined(prev_cgpa: float, prev_credits: int, entries: list[dict]) -
         not_ = (e.get("not") or "").strip()
         if not_ in ("", "—"):
             continue
-        kredi = _to_int(e.get("kredi"), 0)
         akts = _to_int(e.get("akts"), 0)
         pf = bool(e.get("pf"))
+        eski_not = (e.get("eski_not") or "").strip()
+        is_retake = eski_not in GRADE_PTS
 
         if not pf and not_ in GRADE_PTS:
-            sem_pts_sum += GRADE_PTS[not_] * kredi
-            sem_cred_sum += kredi
+            new_pts = GRADE_PTS[not_] * akts
+            term_pts += new_pts          # dönem: bu ders bu dönem alındı
+            term_w += akts
+            if is_retake:                # kümülatif: eski çıkar, yeni gir; AKTS eklenmez
+                retake_delta += new_pts - GRADE_PTS[eski_not] * akts
+            else:
+                cum_pts_add += new_pts
+                cum_w_add += akts
 
         if not_ in PASSING:
             sem_passed += 1
-            sem_akts += akts
+            if not is_retake:            # tekrar dersinin AKTS'si zaten kazanılmıştı
+                sem_akts_earned += akts
         elif not_ in FAILING:
             sem_failed += 1
 
-    sem_gpa = (sem_pts_sum / sem_cred_sum) if sem_cred_sum > 0 else 0.0
+    sem_gpa = (term_pts / term_w) if term_w > 0 else 0.0
 
-    total_credits = max(0, prev_credits) + sem_cred_sum
-    if total_credits > 0:
-        new_cgpa = (max(0.0, prev_cgpa) * max(0, prev_credits) + sem_pts_sum) / total_credits
+    prev_w = max(0, prev_credits)
+    total_w = prev_w + cum_w_add
+    if total_w > 0:
+        new_cgpa = (max(0.0, prev_cgpa) * prev_w + cum_pts_add + retake_delta) / total_w
     else:
         new_cgpa = prev_cgpa
 
@@ -317,14 +337,14 @@ def compute_combined(prev_cgpa: float, prev_credits: int, entries: list[dict]) -
 
     return {
         "sem_gpa": round(sem_gpa, 2),
-        "sem_credits": sem_cred_sum,
-        "sem_akts": sem_akts,
+        "sem_credits": term_w,           # dönem ortalaması ağırlığı (AKTS)
+        "sem_akts": sem_akts_earned,     # bu dönem yeni kazanılan AKTS
         "sem_passed": sem_passed,
         "sem_failed": sem_failed,
         "new_cgpa": round(new_cgpa, 2),
         "prev_cgpa": round(max(0.0, prev_cgpa), 2),
-        "prev_credits": max(0, prev_credits),
-        "total_credits": total_credits,
+        "prev_credits": prev_w,          # önceki toplam AKTS
+        "total_credits": total_w,        # yeni toplam AKTS
         "course_count": len(by_code),
         "onor": onor,
     }
@@ -332,8 +352,9 @@ def compute_combined(prev_cgpa: float, prev_credits: int, entries: list[dict]) -
 
 def compute_gpa(entries: list[dict]) -> dict:
     """entries: list of {ders_kodu, kredi, akts, not, pf}.
+    AGÜ MADDE 30: ortalama AKTS ağırlıklı — Σ(AKTS × katsayı) / Σ(AKTS).
     Aynı ders_kodu birden fazla geçerse SON girdi kazanır (tekrar dersi mantığı).
-    pf=True ise GPA hesabına KATILMAZ ama kazanılan kredi/AKTS sayılır.
+    pf=True ise ortalamaya KATILMAZ ama kazanılan kredi/AKTS sayılır.
     """
     by_code: dict[str, dict] = {}
     for e in entries:
@@ -343,7 +364,7 @@ def compute_gpa(entries: list[dict]) -> dict:
         by_code[kod] = e  # last-write-wins
 
     gpa_pts_sum = 0.0
-    gpa_cred_sum = 0
+    gpa_cred_sum = 0        # ortalama denominatörü — AKTS
     earned_credits = 0
     earned_akts = 0
     passed = 0
@@ -359,8 +380,8 @@ def compute_gpa(entries: list[dict]) -> dict:
         is_pass = not_ in PASSING
 
         if not pf and not_ in GRADE_PTS:
-            gpa_pts_sum += GRADE_PTS[not_] * kredi
-            gpa_cred_sum += kredi
+            gpa_pts_sum += GRADE_PTS[not_] * akts   # ağırlık: AKTS
+            gpa_cred_sum += akts
 
         if is_pass:
             earned_credits += kredi

@@ -410,9 +410,10 @@ with gpa_tab:
                                         value=0.0, step=0.01, key=f"gpa_prev_cgpa_{bolum_id}",
                                         help="Bu döneme girmeden önceki kümülatif ortalaman. İlk dönemse 0.00 bırak.")
         with gc2:
-            prev_credits = st.number_input("Önceki Toplam Kredi", min_value=0, max_value=300, value=0, step=1,
+            prev_credits = st.number_input("Önceki Toplam AKTS", min_value=0, max_value=300, value=0, step=1,
                                            key=f"gpa_prev_cred_{bolum_id}",
-                                           help="Şimdiye kadar geçtiğin derslerin toplam kredisi.")
+                                           help="Şimdiye kadar aldığın derslerin toplam AKTS'si "
+                                                "(GNO AKTS ağırlıklı hesaplanır — AGÜ yönetmeliği).")
 
         st.markdown("---")
 
@@ -452,9 +453,9 @@ with gpa_tab:
         extra_key = f"gpa_extras_{bolum_id}"
         if extra_key not in st.session_state:
             st.session_state[extra_key] = pd.DataFrame(
-                columns=["Ders Kodu", "Ders Adı", "Kredi", "AKTS", "Not", "Tip", "P/F"])
+                columns=["Ders Kodu", "Ders Adı", "Kredi", "AKTS", "Not", "Eski Not", "Tip", "P/F"])
 
-        with st.expander("➕ Müfredat dışı ders ekle (yatay geçiş, intibak, yaz okulu...)"):
+        with st.expander("➕ Ders ekle (tekrar/yükseltme, yatay geçiş, yaz okulu...)"):
             catalog = gpa.all_courses_catalog()
             code_options = [""] + sorted(catalog.keys())
 
@@ -478,12 +479,13 @@ with gpa_tab:
                     if not already:
                         new_row = pd.DataFrame([{
                             "Ders Kodu": c["ders_kodu"], "Ders Adı": c["ders_adi"], "Kredi": c["kredi"],
-                            "AKTS": c["akts"], "Not": "—", "Tip": "Yatay geçiş",
+                            "AKTS": c["akts"], "Not": "—", "Eski Not": "—", "Tip": "Yatay geçiş",
                             "P/F": gpa.is_default_pf(c["ders_kodu"], c["ders_adi"])}])
                         st.session_state[extra_key] = pd.concat([existing, new_row], ignore_index=True)
                         st.rerun()
 
-            st.caption("Aradığın dersi seç → **➕ Ekle** → kredi/AKTS otomatik dolar. Sadece harf notunu seç.")
+            st.caption("Aradığın dersi seç → **➕ Ekle** → kredi/AKTS otomatik dolar. Yeni harf notunu seç. "
+                       "**Tekrar/yükseltme** ise ayrıca **Eski Not**'u da seç (eski not GNO'dan çıkar, yeni girer).")
 
             edited_extras = st.data_editor(
                 st.session_state[extra_key],
@@ -492,7 +494,10 @@ with gpa_tab:
                     "Ders Adı": st.column_config.TextColumn(width="medium"),
                     "Kredi": st.column_config.NumberColumn(min_value=0, max_value=15, default=3, width="small"),
                     "AKTS": st.column_config.NumberColumn(min_value=0, max_value=30, default=5, width="small"),
-                    "Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small"),
+                    "Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small",
+                                                            help="Bu dönem aldığın YENİ not."),
+                    "Eski Not": st.column_config.SelectboxColumn(options=gpa.GRADE_OPTIONS, default="—", width="small",
+                                                                 help="Tekrar/yükseltmede ESKİ notun. Değilse '—' bırak."),
                     "Tip": st.column_config.SelectboxColumn(options=gpa.EXTRA_TYPES, width="medium"),
                     "P/F": st.column_config.CheckboxColumn(width="small"),
                 },
@@ -522,17 +527,19 @@ with gpa_tab:
                 grade = str(row.get("Not", "—") or "—").strip()
                 if not kod or grade in ("", "—", "nan"):
                     continue
+                eski = str(row.get("Eski Not", "—") or "—").strip()
+                eski = eski if eski not in ("", "—", "nan") else ""
                 entries.append({
                     "ders_kodu": kod,
                     "kredi": int(row["Kredi"] or 0) if pd.notna(row.get("Kredi")) else 0,
                     "akts": int(row["AKTS"] or 0) if pd.notna(row.get("AKTS")) else 0,
-                    "not": grade, "pf": bool(row.get("P/F"))})
+                    "not": grade, "eski_not": eski, "pf": bool(row.get("P/F"))})
 
             if not entries:
                 st.warning("Hiç not girilmemiş. En az bir derse harf notu seç.")
             else:
                 if prev_cgpa > 0 and int(prev_credits) == 0:
-                    st.error("⚠️ Geçmiş CGPA girdin ama 'Önceki Toplam Kredi' = 0. Doğru hesap için ikisini de gir.")
+                    st.error("⚠️ Geçmiş CGPA girdin ama 'Önceki Toplam AKTS' = 0. Doğru hesap için ikisini de gir.")
                 result = gpa.compute_combined(prev_cgpa, int(prev_credits), entries)
                 st.markdown("---")
                 m1, m2, m3, m4 = st.columns(4)
@@ -540,19 +547,17 @@ with gpa_tab:
                           delta=f"{result['new_cgpa'] - result['prev_cgpa']:+.2f}" if result['prev_credits'] > 0 else None)
                 m2.metric("📅 Bu Dönem GPA", f"{result['sem_gpa']:.2f}")
                 m3.metric("✅ Geçen / ❌ Kalan", f"{result['sem_passed']} / {result['sem_failed']}")
-                m4.metric("📊 Toplam Kredi", result['total_credits'],
-                          delta=f"+{result['sem_credits']} bu dönem" if result['sem_credits'] else None)
+                m4.metric("📊 Toplam AKTS", result['total_credits'],
+                          delta=f"+{result['total_credits'] - result['prev_credits']} yeni" if result['total_credits'] > result['prev_credits'] else None)
 
-                prev_pts = result['prev_cgpa'] * result['prev_credits']
-                sem_pts_calc = result['sem_gpa'] * result['sem_credits']
                 with st.expander("🧮 Hesap detayı"):
                     st.markdown(
-                        f"**Formül:** `Yeni CGPA = (Geçmiş CGPA × Geçmiş Kredi + Bu dönem puanları) / Toplam Kredi`\n\n"
-                        f"| | Kredi | Ortalama | Puan |\n|---|---:|---:|---:|\n"
-                        f"| Geçmiş | {result['prev_credits']} | {result['prev_cgpa']:.2f} | {prev_pts:.2f} |\n"
-                        f"| Bu dönem | {result['sem_credits']} | {result['sem_gpa']:.2f} | {sem_pts_calc:.2f} |\n"
-                        f"| **Toplam** | **{result['total_credits']}** | **{result['new_cgpa']:.2f}** | "
-                        f"**{prev_pts + sem_pts_calc:.2f}** |\n"
+                        "**GNO, AKTS ağırlıklı hesaplanır** (AGÜ MADDE 30): "
+                        "`GNO = Σ(AKTS × katsayı) / Σ(AKTS)`\n\n"
+                        f"- Geçmiş: **{result['prev_cgpa']:.2f}** GNO × **{result['prev_credits']}** AKTS\n"
+                        f"- Yeni toplam: **{result['total_credits']}** AKTS → **Yeni CGPA {result['new_cgpa']:.2f}**\n\n"
+                        "> Tekrar/yükseltme derslerinde eski not çıkarılıp yeni not eklenir; "
+                        "dersin AKTS'si toplamda **tek** sayılır."
                     )
                 if result["onor"]:
                     thr = gpa.YUKSEK_ONOR_THRESHOLD if "Yüksek" in result["onor"] else gpa.ONOR_THRESHOLD
