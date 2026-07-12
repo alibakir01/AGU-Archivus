@@ -14,6 +14,7 @@ Güvenlik:
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -41,16 +42,12 @@ def threshold() -> float:
     return _THRESHOLD
 
 
-def _np():
-    import numpy as np
-    return np
-
-
-def _normalize(vec):
-    np = _np()
-    v = np.asarray(vec, dtype=np.float32)
-    n = float(np.linalg.norm(v))
-    return v / n if n > 0 else v
+def _normalize(vec) -> list[float]:
+    """Vektörü birim uzunluğa getir (saf Python — numpy YOK; ABI/segfault riski yok).
+    Böylece kosinüs benzerliği = normalize edilmiş vektörlerin nokta çarpımı."""
+    v = [float(x) for x in vec]
+    n = math.sqrt(sum(x * x for x in v))
+    return [x / n for x in v] if n > 0 else v
 
 
 def _ensure_loaded() -> None:
@@ -93,13 +90,19 @@ def lookup(bolum: str, emb, threshold: float | None = None) -> str | None:
         e = _store.get(bolum)
         if not e or not e["q"]:
             return None
-        np = _np()
         q = _normalize(emb)
-        mat = np.vstack(e["embs"])          # (N, d)
-        sims = mat @ q                       # (N,)
-        i = int(np.argmax(sims))
-        if float(sims[i]) >= thr and (time.time() - e["ts"][i]) <= _TTL:
-            return e["a"][i]
+        # Kosinüs = normalize edilmiş vektörlerin nokta çarpımı (saf Python)
+        best_sim = -2.0
+        best_i = -1
+        for i, v in enumerate(e["embs"]):
+            s = 0.0
+            for a, b in zip(v, q):
+                s += a * b
+            if s > best_sim:
+                best_sim = s
+                best_i = i
+        if best_i >= 0 and best_sim >= thr and (time.time() - e["ts"][best_i]) <= _TTL:
+            return e["a"][best_i]
     return None
 
 

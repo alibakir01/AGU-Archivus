@@ -6,7 +6,10 @@
 # için:  pip install -r requirements-local.txt
 # ============================================================================
 streamlit==1.56.0
-pandas==3.0.2
+# numpy<2 + pandas 2.2.x — Streamlit Cloud'da numpy 2.0 ABI kırılması (segfault)
+# yaşanmasın diye stabil, uyumlu sürümler pinlendi.
+numpy==1.26.4
+pandas==2.2.3
 voyageai==0.4.1
 pinecone==9.1.0
 rank-bm25==0.2.2
