@@ -20,6 +20,6 @@ python-dotenv==1.2.2
 # Feedback → Google Sheets (👍/👎 kaydı)
 gspread>=6.0,<7
 
-# Bulut API (app_cloud.py) — Streamlit Cloud kullanmaz ama hafif, kalsın
-fastapi==0.138.2
-uvicorn==0.46.0
+# NOT: fastapi/uvicorn Streamlit Cloud'da KULLANILMIYOR (app_cloud.py içindi) —
+# kurulum yükünü ve bellek ayak izini azaltmak için buradan çıkarıldı.
+# app_cloud.py'yi ayrıca çalıştıracaksan: pip install fastapi uvicorn
