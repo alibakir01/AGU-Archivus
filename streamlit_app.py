@@ -243,7 +243,7 @@ with st.sidebar:
     top_k = LEVEL_TO_K[detail_level]
 
     st.divider()
-    if st.button("🗑️ Sohbeti Temizle", use_container_width=True):
+    if st.button("🗑️ Sohbeti Temizle", width="stretch"):
         st.session_state["messages"] = []
         st.rerun()
 
@@ -292,7 +292,7 @@ with chat_tab:
         cols = st.columns(2)
         for i, (icon, text) in enumerate(ui_theme.SUGGESTIONS.get(bolum_id, [])):
             with cols[i % 2]:
-                if st.button(f"{icon}  {text}", key=f"sug_{i}", use_container_width=True):
+                if st.button(f"{icon}  {text}", key=f"sug_{i}", width="stretch"):
                     st.session_state["pending_q"] = text
                     st.rerun()
 
@@ -455,7 +455,7 @@ with gpa_tab:
                     "P/F": st.column_config.CheckboxColumn(width="small",
                                                            help="Pass/Fail dersi (GPA'ya katılmaz; AKTS sayılır)."),
                 },
-                use_container_width=True, hide_index=True, num_rows="fixed", key=f"editor_{df_key}",
+                width="stretch", hide_index=True, num_rows="fixed", key=f"editor_{df_key}",
             )
 
         extra_key = f"gpa_extras_{bolum_id}"
@@ -479,7 +479,7 @@ with gpa_tab:
                                         format_func=_fmt_option, index=0, key=f"gpa_extra_search_{bolum_id}")
             with ec2:
                 st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-                if st.button("➕ Ekle", key=f"gpa_extra_add_{bolum_id}", use_container_width=True) and sel_code:
+                if st.button("➕ Ekle", key=f"gpa_extra_add_{bolum_id}", width="stretch") and sel_code:
                     c = catalog[sel_code]
                     existing = st.session_state[extra_key]
                     already = ("Ders Kodu" in existing.columns
@@ -510,12 +510,12 @@ with gpa_tab:
                     "Tip": st.column_config.SelectboxColumn(options=gpa.EXTRA_TYPES, width="medium"),
                     "P/F": st.column_config.CheckboxColumn(width="small"),
                 },
-                use_container_width=True, hide_index=True, num_rows="dynamic", key=f"editor_{extra_key}",
+                width="stretch", hide_index=True, num_rows="dynamic", key=f"editor_{extra_key}",
             )
 
         bc1, bc2 = st.columns([1, 1])
-        do_calc = bc1.button("🎯 Yeni CGPA Hesapla", type="primary", use_container_width=True)
-        if bc2.button("🔄 Notları Sıfırla", use_container_width=True):
+        do_calc = bc1.button("🎯 Yeni CGPA Hesapla", type="primary", width="stretch")
+        if bc2.button("🔄 Notları Sıfırla", width="stretch"):
             for k in list(st.session_state.keys()):
                 if isinstance(k, str) and (k.startswith("gpa_df_") or k.startswith("editor_gpa_df_")
                                            or k == extra_key or k == f"editor_{extra_key}"):

@@ -828,7 +828,7 @@ with st.sidebar:
     top_k = level_to_k[detail_level]
 
     st.divider()
-    if st.button("🗑️ Sohbeti Temizle", use_container_width=True):
+    if st.button("🗑️ Sohbeti Temizle", width="stretch"):
         st.session_state["messages"] = []
         st.session_state["_qa_cache"] = {}
         st.rerun()
@@ -962,7 +962,7 @@ with chat_tab:
         cols = st.columns(2)
         for i, (icon, text) in enumerate(SUGGESTIONS.get(bolum_id, [])):
             with cols[i % 2]:
-                if st.button(f"{icon}  {text}", key=f"sug_{i}", use_container_width=True):
+                if st.button(f"{icon}  {text}", key=f"sug_{i}", width="stretch"):
                     st.session_state["pending_q"] = text
                     st.rerun()
 
@@ -1082,7 +1082,7 @@ def _render_followups(question: str, answer: str, key_prefix: str):
     for i, (icon, text) in enumerate(suggestions):
         with cols[i]:
             if st.button(f"{icon} {text}", key=f"fup-{key_prefix}-{i}",
-                         use_container_width=True):
+                         width="stretch"):
                 st.session_state["pending_q"] = text
                 st.rerun()
 
@@ -1368,7 +1368,7 @@ with gpa_tab:
                         help="Pass/Fail dersi (GPA'ya katılmaz; AKTS sayılır).",
                     ),
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 num_rows="fixed",
                 key=f"editor_{df_key}",
@@ -1403,7 +1403,7 @@ with gpa_tab:
                 )
             with sc2:
                 st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-                if st.button("➕ Ekle", key=f"gpa_extra_add_{bolum_id}", use_container_width=True):
+                if st.button("➕ Ekle", key=f"gpa_extra_add_{bolum_id}", width="stretch"):
                     if sel_code:
                         c = catalog[sel_code]
                         existing = st.session_state[extra_key]
@@ -1446,7 +1446,7 @@ with gpa_tab:
                     "Tip": st.column_config.SelectboxColumn(options=gpa.EXTRA_TYPES, width="medium"),
                     "P/F": st.column_config.CheckboxColumn(width="small"),
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 num_rows="dynamic",
                 key=f"editor_{extra_key}",
@@ -1454,8 +1454,8 @@ with gpa_tab:
 
         # ---- Hesapla / Sıfırla ----
         bc1, bc2 = st.columns([1, 1])
-        do_calc = bc1.button("🎯 Yeni CGPA Hesapla", type="primary", use_container_width=True)
-        if bc2.button("🔄 Notları Sıfırla", use_container_width=True):
+        do_calc = bc1.button("🎯 Yeni CGPA Hesapla", type="primary", width="stretch")
+        if bc2.button("🔄 Notları Sıfırla", width="stretch"):
             for k in list(st.session_state.keys()):
                 if isinstance(k, str) and (k.startswith("gpa_df_") or k.startswith("editor_gpa_df_") or k == extra_key or k == f"editor_{extra_key}"):
                     st.session_state.pop(k, None)
