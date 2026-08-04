@@ -1,8 +1,11 @@
-# AGÜ RAG Asistanı
+# AGU RAG Asistanı
 
 Abdullah Gül Üniversitesi öğrencileri için Türkçe RAG asistanı.
 Müfredat, ders içerikleri, seçmeli ders havuzları, staj yönergeleri, akademik takvim,
 Erasmus ve yatay geçiş sorularını cevaplar.
+
+![AGU Archivus arayüzü](assets/screenshot.png)
+
 
 ## Desteklenen Bölümler
 **Mühendislik & Mimarlık**
