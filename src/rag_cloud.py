@@ -39,24 +39,34 @@ FINAL_K = 8                      # bağlama giren chunk sayısı
 RERANK_ESIK = 0.3                # rerank relevance_score eşiği
 
 # LLM sağlayıcı katmanı.
-#   "mistral" (VARSAYILAN, 3 katman):
+#   "free" (VARSAYILAN — tamamen ücretsiz, kartsız: Groq + OpenRouter + Gemini):
 #       1) Kısa & context'siz sorular (< ~1K token) → Groq hız şeridi (varsa)
-#       2) Normal/uzun sorular → mistral-small-2506 (ana motor)
-#       3) Small tıkanırsa → mistral-medium-2505 (fallback)
-#   "groq" | "openrouter" : tek sağlayıcı (override)
+#       2) Normal/uzun sorular → OpenRouter (ücretsiz model, ana motor)
+#       3) OpenRouter tıkanırsa → Gemini (anahtar varsa)
+#       4) O da tıkanırsa → Groq (son yedek, aynı anahtarlar rotasyonlu)
+#   "mistral" (3 katman, ARTIK PARALI — Mistral API free tier'da key açmıyor):
+#       Groq hız şeridi → mistral-small → mistral-medium → OpenRouter
+#   "groq" | "openrouter" | "gemini" : tek sağlayıcı (override/test)
 #   "auto"               : legacy (Groq → OpenRouter fallback)
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mistral").lower().strip()
+# Not: Her sağlayıcı için birden fazla anahtar desteklenir (429 rotasyonu):
+#   GROQ_API_KEY_2/_3... veya GROQ_API_KEYS="k1,k2" (OPENROUTER/MISTRAL için de aynı).
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "free").lower().strip()
 
 # Mistral (ana motor + fallback) — OpenAI-uyumlu endpoint, ek paket gerekmez
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
 MISTRAL_MODEL_PRIMARY = os.getenv("MISTRAL_MODEL", "mistral-small-2506")
 MISTRAL_MODEL_FALLBACK = os.getenv("MISTRAL_MODEL_FALLBACK", "mistral-medium-2505")
 
-# Groq hız şeridi — sadece kısa/context'siz sorular buraya yönlendirilir
-LLM_MODEL_GROQ = "meta-llama/llama-4-scout-17b-16e-instruct"
+# Groq hız şeridi — kısa sorular + ücretsiz zincirde ana/yedek motor
+# Env ile değiştirilebilir (study için model katmanı sabitlemek üzere).
+LLM_MODEL_GROQ = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 GROQ_FAST_LANE_TOKENS = int(os.getenv("GROQ_FAST_LANE_TOKENS", "1000"))
 
 LLM_MODEL_OPENROUTER = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+
+# Google Gemini — OpenAI-uyumlu endpoint (ek paket gerekmez, OpenAI SDK yeter)
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+LLM_MODEL_GEMINI = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 
 
 # --------------------------------------------------------------------------- #
@@ -246,7 +256,10 @@ def _load_all_chunks() -> tuple[dict, ...]:
     return tuple(chunks)
 
 
-@lru_cache(maxsize=16)
+# maxsize=2: aynı anda en fazla 2 bölümün BM25 indeksi bellekte tutulur.
+# (Eskiden 16 idi → 13 bölüm birikince Streamlit Cloud'un 1GB'ını aşıp OOM/segfault
+# oluyordu.) Bölüm değişince indeks yeniden kurulur — birkaç yüz ms, kabul edilebilir.
+@lru_cache(maxsize=2)
 def _get_bm25(bolum: str | None):
     from rank_bm25 import BM25Okapi
 
@@ -669,26 +682,77 @@ def _messages_for(soru: str, context_texts: list[str], bolum: str | None) -> lis
     ]
 
 
-@lru_cache(maxsize=1)
-def _groq_client():
-    from groq import Groq
+def _env_keys(base: str) -> list[str]:
+    """Bir sağlayıcının TÜM anahtarlarını toplar (rotasyon için).
 
-    return Groq(api_key=os.getenv("GROQ_API_KEY"))
+    Desteklenen biçimler (hepsi birleştirilir, sırası korunur, tekrarsız):
+      • MISTRAL_API_KEY            → tek anahtar
+      • MISTRAL_API_KEY_2, _3, ... → ek anahtarlar (numaralı)
+      • MISTRAL_API_KEYS           → virgülle ayrılmış çoklu anahtar
+    """
+    keys: list[str] = []
+    main = (os.getenv(base) or "").strip()
+    if main:
+        keys.append(main)
+    # Virgülle ayrılmış toplu değişken: MISTRAL_API_KEYS
+    for k in (os.getenv(base + "S") or "").split(","):
+        k = k.strip()
+        if k:
+            keys.append(k)
+    # Numaralı değişkenler: MISTRAL_API_KEY_2, _3, ...
+    i = 2
+    while True:
+        k = (os.getenv(f"{base}_{i}") or "").strip()
+        if not k:
+            break
+        keys.append(k)
+        i += 1
+    # Tekrarsız, sırayı koruyarak
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for k in keys:
+        if k not in seen:
+            seen.add(k)
+            uniq.append(k)
+    return uniq
 
 
-@lru_cache(maxsize=1)
-def _openrouter_client():
-    from openai import OpenAI
-
-    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))
+# Client'lar anahtar bazında cache'lenir (her anahtar için tek instance).
+_CLIENT_CACHE: dict[tuple[str, str], object] = {}
 
 
-@lru_cache(maxsize=1)
-def _mistral_client():
+def _groq_client(api_key: str):
+    key = ("groq", api_key)
+    if key not in _CLIENT_CACHE:
+        from groq import Groq
+        _CLIENT_CACHE[key] = Groq(api_key=api_key)
+    return _CLIENT_CACHE[key]
+
+
+def _openrouter_client(api_key: str):
+    key = ("openrouter", api_key)
+    if key not in _CLIENT_CACHE:
+        from openai import OpenAI
+        _CLIENT_CACHE[key] = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+    return _CLIENT_CACHE[key]
+
+
+def _mistral_client(api_key: str):
     """Mistral — OpenAI-uyumlu endpoint (ek paket gerekmez)."""
-    from openai import OpenAI
+    key = ("mistral", api_key)
+    if key not in _CLIENT_CACHE:
+        from openai import OpenAI
+        _CLIENT_CACHE[key] = OpenAI(base_url=MISTRAL_BASE_URL, api_key=api_key)
+    return _CLIENT_CACHE[key]
 
-    return OpenAI(base_url=MISTRAL_BASE_URL, api_key=os.getenv("MISTRAL_API_KEY"))
+
+def _gemini_client(api_key: str):
+    """Google Gemini — OpenAI-uyumlu endpoint (ek paket gerekmez)."""
+    key = ("gemini", api_key)
+    if key not in _CLIENT_CACHE:
+        from openai import OpenAI
+        _CLIENT_CACHE[key] = OpenAI(base_url=GEMINI_BASE_URL, api_key=api_key)
+    return _CLIENT_CACHE[key]
 
 
 def _stream_provider(client, model, messages, max_tokens, temperature):
@@ -711,25 +775,46 @@ def _estimate_tokens(messages: list[dict]) -> int:
 
 def _use_groq_fast_lane(messages: list[dict]) -> bool:
     """Kısa & context'siz sorular Groq hız şeridine uygun mu?
-    (GROQ_API_KEY tanımlı VE tahmini prompt < ~1K token)."""
-    return bool(os.getenv("GROQ_API_KEY")) and _estimate_tokens(messages) < GROQ_FAST_LANE_TOKENS
+    (GROQ anahtarı tanımlı VE tahmini prompt < ~1K token)."""
+    return bool(_env_keys("GROQ_API_KEY")) and _estimate_tokens(messages) < GROQ_FAST_LANE_TOKENS
+
+
+def _layer(client_fn, base_env: str, model: str) -> list[tuple]:
+    """Bir (sağlayıcı, model) katmanını, o sağlayıcının TÜM anahtarları için
+    ayrı birer (client, model) girişine açar. 429 → bir sonraki anahtar/katman."""
+    return [(client_fn(k), model) for k in _env_keys(base_env)]
 
 
 def _build_chain(messages: list[dict]) -> list[tuple]:
-    """Denenecek (client, model) katmanlarını sırayla döndürür."""
+    """Denenecek (client, model) katmanlarını sırayla döndürür.
+    Her sağlayıcı için birden fazla anahtar varsa hepsi sırayla denenir."""
     if LLM_PROVIDER == "openrouter":
-        return [(_openrouter_client(), LLM_MODEL_OPENROUTER)]
+        return _layer(_openrouter_client, "OPENROUTER_API_KEY", LLM_MODEL_OPENROUTER)
     if LLM_PROVIDER == "groq":
-        return [(_groq_client(), LLM_MODEL_GROQ)]
+        return _layer(_groq_client, "GROQ_API_KEY", LLM_MODEL_GROQ)
+    if LLM_PROVIDER == "gemini":
+        return _layer(_gemini_client, "GEMINI_API_KEY", LLM_MODEL_GEMINI)
     if LLM_PROVIDER == "auto":  # legacy: Groq → OpenRouter
-        return [(_groq_client(), LLM_MODEL_GROQ), (_openrouter_client(), LLM_MODEL_OPENROUTER)]
+        return (_layer(_groq_client, "GROQ_API_KEY", LLM_MODEL_GROQ)
+                + _layer(_openrouter_client, "OPENROUTER_API_KEY", LLM_MODEL_OPENROUTER))
 
-    # Varsayılan: Mistral 3 katman
+    if LLM_PROVIDER == "free":  # VARSAYILAN: ücretsiz — Groq → OpenRouter → Gemini → Groq
+        chain = []
+        if _use_groq_fast_lane(messages):
+            chain += _layer(_groq_client, "GROQ_API_KEY", LLM_MODEL_GROQ)          # 1) hız şeridi
+        chain += _layer(_openrouter_client, "OPENROUTER_API_KEY", LLM_MODEL_OPENROUTER)  # 2) ana motor
+        chain += _layer(_gemini_client, "GEMINI_API_KEY", LLM_MODEL_GEMINI)        # 3) Gemini yedek (anahtar varsa)
+        chain += _layer(_groq_client, "GROQ_API_KEY", LLM_MODEL_GROQ)              # 4) son yedek
+        return chain
+
+    # "mistral": Mistral 3 katman (her katman tüm Mistral anahtarlarına açılır)
     chain: list[tuple] = []
     if _use_groq_fast_lane(messages):
-        chain.append((_groq_client(), LLM_MODEL_GROQ))            # 1) hız şeridi
-    chain.append((_mistral_client(), MISTRAL_MODEL_PRIMARY))       # 2) ana motor (small)
-    chain.append((_mistral_client(), MISTRAL_MODEL_FALLBACK))      # 3) fallback (medium)
+        chain += _layer(_groq_client, "GROQ_API_KEY", LLM_MODEL_GROQ)          # 1) hız şeridi
+    chain += _layer(_mistral_client, "MISTRAL_API_KEY", MISTRAL_MODEL_PRIMARY)  # 2) ana motor (small)
+    chain += _layer(_mistral_client, "MISTRAL_API_KEY", MISTRAL_MODEL_FALLBACK) # 3) fallback (medium)
+    # Son çare: Mistral tüm anahtarlarıyla tıkanırsa OpenRouter'a düş (anahtar varsa)
+    chain += _layer(_openrouter_client, "OPENROUTER_API_KEY", LLM_MODEL_OPENROUTER)
     return chain
 
 
