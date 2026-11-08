@@ -59,7 +59,7 @@ MISTRAL_MODEL_FALLBACK = os.getenv("MISTRAL_MODEL_FALLBACK", "mistral-medium-250
 
 # Groq hız şeridi — kısa sorular + ücretsiz zincirde ana/yedek motor
 # Env ile değiştirilebilir (study için model katmanı sabitlemek üzere).
-LLM_MODEL_GROQ = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+LLM_MODEL_GROQ = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_FAST_LANE_TOKENS = int(os.getenv("GROQ_FAST_LANE_TOKENS", "1000"))
 
 LLM_MODEL_OPENROUTER = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
